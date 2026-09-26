@@ -1,0 +1,368 @@
+import { db } from './db.js';
+
+// Mapowanie: userId -> Set(socketId)
+const userSockets = new Map();
+// Mapowanie: channelId -> Map(socketId, { user, isMuted, isDeafened, isSpeaking })
+const voiceRooms = new Map();
+
+export const setupSocketHandlers = (io) => {
+  io.on('connection', (socket) => {
+    let currentUserId = null;
+
+    // Rejestracja użytkownika w socketach
+    socket.on('register-user', ({ userId }) => {
+      if (!userId) return;
+      currentUserId = userId;
+      socket.userId = userId;
+
+      if (!userSockets.has(userId)) {
+        userSockets.set(userId, new Set());
+      }
+      userSockets.get(userId).add(socket.id);
+
+      // Aktualizuj status użytkownika
+      const user = db.findUserById(userId);
+      if (user && user.status === 'offline') {
+        db.updateUser(userId, { status: 'online' });
+      }
+
+      // Rozgłoś wszystkim aktualizację obecności
+      io.emit('user-status-changed', {
+        userId,
+        status: user ? user.status : 'online'
+      });
+    });
+
+    // Zmiana statusu obecności (online, idle, dnd, offline)
+    socket.on('set-status', ({ status }) => {
+      if (!currentUserId) return;
+      db.updateUser(currentUserId, { status });
+      io.emit('user-status-changed', {
+        userId: currentUserId,
+        status
+      });
+    });
+
+    // --- KANAŁY TEKSTOWE ---
+    socket.on('join-text-channel', ({ channelId }) => {
+      socket.join(`channel:${channelId}`);
+    });
+
+    socket.on('leave-text-channel', ({ channelId }) => {
+      socket.leave(`channel:${channelId}`);
+    });
+
+    socket.on('send-message', ({ channelId, serverId, text }) => {
+      if (!currentUserId || !text || !text.trim()) return;
+
+      const user = db.findUserById(currentUserId);
+      if (!user) return;
+
+      const newMsg = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        channelId,
+        serverId,
+        userId: currentUserId,
+        text: text.trim(),
+        createdAt: new Date().toISOString()
+      };
+
+      db.addMessage(newMsg);
+
+      io.to(`channel:${channelId}`).emit('new-message', {
+        message: newMsg,
+        user: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarColor: user.avatarColor,
+          avatarEmoji: user.avatarEmoji,
+          status: user.status
+        }
+      });
+    });
+
+    socket.on('typing-start', ({ channelId }) => {
+      if (!currentUserId) return;
+      const user = db.findUserById(currentUserId);
+      socket.to(`channel:${channelId}`).emit('user-typing', {
+        channelId,
+        user: { id: currentUserId, displayName: user?.displayName || user?.username }
+      });
+    });
+
+    socket.on('typing-stop', ({ channelId }) => {
+      if (!currentUserId) return;
+      socket.to(`channel:${channelId}`).emit('user-stop-typing', {
+        channelId,
+        userId: currentUserId
+      });
+    });
+
+    // --- WIADOMOŚCI PRYWATNE (PV / DM) ---
+    socket.on('send-direct-message', ({ recipientId, text }) => {
+      if (!currentUserId || !recipientId || !text || !text.trim()) return;
+
+      const user = db.findUserById(currentUserId);
+      if (!user) return;
+
+      const newDm = {
+        id: `dm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        senderId: currentUserId,
+        recipientId,
+        text: text.trim(),
+        createdAt: new Date().toISOString()
+      };
+
+      db.addDirectMessage(newDm);
+
+      // Dodaj relację znajomości jeśli jeszcze nie istnieje
+      db.addFriendship(currentUserId, recipientId);
+
+      const dmPayload = {
+        message: newDm,
+        sender: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarColor: user.avatarColor,
+          avatarEmoji: user.avatarEmoji,
+          status: user.status
+        }
+      };
+
+      // Wyślij do odbiorcy
+      const recipientSockets = userSockets.get(recipientId);
+      if (recipientSockets) {
+        recipientSockets.forEach(sId => {
+          io.to(sId).emit('new-direct-message', dmPayload);
+        });
+      }
+
+      // Wyślij także do nadawcy (do wszystkich jego połączonych kart/urządzeń)
+      const senderSockets = userSockets.get(currentUserId);
+      if (senderSockets) {
+        senderSockets.forEach(sId => {
+          io.to(sId).emit('new-direct-message', dmPayload);
+        });
+      }
+    });
+
+    // --- KANAŁY GŁOSOWE (WebRTC Voice Rooms) ---
+    socket.on('join-voice-channel', ({ channelId, serverId }) => {
+      if (!currentUserId || !channelId) return;
+      const user = db.findUserById(currentUserId);
+      if (!user) return;
+
+      const safeUser = {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        avatarColor: user.avatarColor,
+        avatarEmoji: user.avatarEmoji,
+        socketId: socket.id
+      };
+
+      // Opuść ewentualne poprzednie pokoje głosowe tego socketu
+      handleLeaveAllVoiceRooms(socket, io);
+
+      if (!voiceRooms.has(channelId)) {
+        voiceRooms.set(channelId, new Map());
+      }
+      const room = voiceRooms.get(channelId);
+
+      // Pobierz listę istniejących użytkowników w tym pokoju
+      const existingPeers = Array.from(room.values());
+
+      // Dodaj nowego użytkownika
+      room.set(socket.id, {
+        user: safeUser,
+        isMuted: false,
+        isDeafened: false,
+        isSpeaking: false,
+        channelId,
+        serverId
+      });
+
+      socket.voiceChannelId = channelId;
+      socket.join(`voice:${channelId}`);
+
+      // Zwróć dołączającemu listę użytkowników w pokoju
+      socket.emit('voice-room-users', {
+        channelId,
+        users: existingPeers
+      });
+
+      // Poinformuj innych o nowym uczestniku
+      socket.to(`voice:${channelId}`).emit('user-joined-voice', {
+        channelId,
+        user: safeUser
+      });
+
+      // Powiadomienie globalne dla UI serwera (żeby w drzewie kanałów było widać kto siedzi)
+      io.emit('voice-state-update', {
+        channelId,
+        serverId,
+        users: Array.from(room.values()).map(r => r.user)
+      });
+    });
+
+    socket.on('leave-voice-channel', ({ channelId }) => {
+      handleLeaveVoiceRoom(socket, channelId, io);
+    });
+
+    // Sygnalizacja WebRTC dla kanałów głosowych
+    socket.on('voice-signal', ({ targetSocketId, signal, callerUser }) => {
+      io.to(targetSocketId).emit('voice-signal', {
+        signal,
+        callerSocketId: socket.id,
+        callerUser
+      });
+    });
+
+    socket.on('voice-speaking-state', ({ channelId, isSpeaking }) => {
+      if (!channelId) return;
+      socket.to(`voice:${channelId}`).emit('user-speaking-changed', {
+        socketId: socket.id,
+        userId: currentUserId,
+        isSpeaking
+      });
+    });
+
+    socket.on('voice-mute-state', ({ channelId, isMuted, isDeafened }) => {
+      if (!channelId) return;
+      const room = voiceRooms.get(channelId);
+      if (room && room.has(socket.id)) {
+        const peer = room.get(socket.id);
+        peer.isMuted = isMuted;
+        peer.isDeafened = isDeafened;
+      }
+      io.to(`voice:${channelId}`).emit('user-mute-changed', {
+        socketId: socket.id,
+        userId: currentUserId,
+        isMuted,
+        isDeafened
+      });
+    });
+
+    // --- BEZPOŚREDNIE ROZMOWY GŁOSOWE PV (1-on-1 Voice Call) ---
+    socket.on('start-direct-call', ({ targetUserId }) => {
+      if (!currentUserId || !targetUserId) return;
+      const caller = db.findUserById(currentUserId);
+      if (!caller) return;
+
+      const recipientSockets = userSockets.get(targetUserId);
+      if (recipientSockets && recipientSockets.size > 0) {
+        recipientSockets.forEach(sId => {
+          io.to(sId).emit('incoming-direct-call', {
+            caller: {
+              id: caller.id,
+              username: caller.username,
+              displayName: caller.displayName,
+              avatarColor: caller.avatarColor,
+              avatarEmoji: caller.avatarEmoji,
+              socketId: socket.id
+            }
+          });
+        });
+        socket.emit('direct-call-ringing', { targetUserId });
+      } else {
+        socket.emit('direct-call-failed', { reason: 'Użytkownik jest obecnie offline' });
+      }
+    });
+
+    socket.on('accept-direct-call', ({ callerSocketId }) => {
+      const accepter = db.findUserById(currentUserId);
+      io.to(callerSocketId).emit('direct-call-accepted', {
+        accepter: {
+          id: accepter.id,
+          username: accepter.username,
+          displayName: accepter.displayName,
+          avatarColor: accepter.avatarColor,
+          avatarEmoji: accepter.avatarEmoji,
+          socketId: socket.id
+        }
+      });
+    });
+
+    socket.on('reject-direct-call', ({ callerSocketId, reason }) => {
+      io.to(callerSocketId).emit('direct-call-rejected', {
+        reason: reason || 'Połączenie zostało odrzucone'
+      });
+    });
+
+    socket.on('end-direct-call', ({ targetSocketId, targetUserId }) => {
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('direct-call-ended');
+      } else if (targetUserId) {
+        const sIds = userSockets.get(targetUserId);
+        if (sIds) {
+          sIds.forEach(id => io.to(id).emit('direct-call-ended'));
+        }
+      }
+    });
+
+    socket.on('direct-call-signal', ({ targetSocketId, signal }) => {
+      io.to(targetSocketId).emit('direct-call-signal', {
+        fromSocketId: socket.id,
+        signal
+      });
+    });
+
+    // --- ROZŁĄCZENIE ---
+    socket.on('disconnect', () => {
+      handleLeaveAllVoiceRooms(socket, io);
+
+      if (currentUserId && userSockets.has(currentUserId)) {
+        const set = userSockets.get(currentUserId);
+        set.delete(socket.id);
+        if (set.size === 0) {
+          userSockets.delete(currentUserId);
+          // Jeśli brak aktywnych połączeń, ustaw status offline
+          db.updateUser(currentUserId, { status: 'offline' });
+          io.emit('user-status-changed', {
+            userId: currentUserId,
+            status: 'offline'
+          });
+        }
+      }
+    });
+  });
+};
+
+function handleLeaveVoiceRoom(socket, channelId, io) {
+  if (!channelId || !voiceRooms.has(channelId)) return;
+  const room = voiceRooms.get(channelId);
+
+  if (room.has(socket.id)) {
+    const peer = room.get(socket.id);
+    const serverId = peer.serverId;
+    room.delete(socket.id);
+    socket.leave(`voice:${channelId}`);
+    socket.voiceChannelId = null;
+
+    // Poinformuj pozostałych w kanale
+    io.to(`voice:${channelId}`).emit('user-left-voice', {
+      channelId,
+      socketId: socket.id,
+      userId: socket.userId
+    });
+
+    // Zaktualizuj globalną listę w UI serwera
+    io.emit('voice-state-update', {
+      channelId,
+      serverId,
+      users: Array.from(room.values()).map(r => r.user)
+    });
+
+    if (room.size === 0) {
+      voiceRooms.delete(channelId);
+    }
+  }
+}
+
+function handleLeaveAllVoiceRooms(socket, io) {
+  if (socket.voiceChannelId) {
+    handleLeaveVoiceRoom(socket, socket.voiceChannelId, io);
+  }
+}

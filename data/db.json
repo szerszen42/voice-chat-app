@@ -1,0 +1,197 @@
+{
+  "users": [
+    {
+      "id": "user-demo-1",
+      "username": "Piotrek",
+      "email": "piotrek@example.com",
+      "passwordHash": "$2a$10$7zVj7d75Q88k2c5Z/y34nO6q7xVpE2U4Y9G6E9yvO0y1Rz0L1W8m2",
+      "displayName": "Piotrek (Gamer)",
+      "avatarColor": "#5865f2",
+      "avatarEmoji": "🎮",
+      "status": "online",
+      "customStatus": "Gra w Valoranta",
+      "bio": "Cześć! Gram i koduję aplikacje.",
+      "createdAt": "2026-09-26T17:58:42.875Z"
+    },
+    {
+      "id": "user-demo-2",
+      "username": "Kasia",
+      "email": "kasia@example.com",
+      "passwordHash": "$2a$10$7zVj7d75Q88k2c5Z/y34nO6q7xVpE2U4Y9G6E9yvO0y1Rz0L1W8m2",
+      "displayName": "Kasia",
+      "avatarColor": "#eb459e",
+      "avatarEmoji": "🌸",
+      "status": "idle",
+      "customStatus": "Słucham muzyki 🎧",
+      "bio": "Miłośniczka dobrej muzyki i designu.",
+      "createdAt": "2026-09-26T17:58:42.876Z"
+    },
+    {
+      "id": "user-1790445588678-pfkl",
+      "username": "Erotiol",
+      "email": "ekipagf@gmail.com",
+      "passwordHash": "$2a$10$8b3jS9YJELEAujT0Y/o3ZOjTqFQJnVx./BkXy9FPgICvokl46iRAe",
+      "displayName": "Erotiol",
+      "avatarColor": "#5865f2",
+      "avatarEmoji": "🎮",
+      "status": "online",
+      "customStatus": "",
+      "bio": "Nowy użytkownik VoiceChat",
+      "createdAt": "2026-09-26T17:59:48.678Z"
+    }
+  ],
+  "servers": [
+    {
+      "id": "srv-public-1",
+      "name": "Główna Społeczność",
+      "description": "Oficjalny serwer publiczny dla wszystkich użytkowników aplikacji.",
+      "icon": "🌍",
+      "color": "#5865f2",
+      "isPublic": true,
+      "ownerId": "user-demo-1",
+      "inviteCode": "GLOWNA-SPOLECZNOSC",
+      "members": [
+        "user-demo-1",
+        "user-demo-2"
+      ],
+      "channels": [
+        {
+          "id": "ch-text-1",
+          "name": "ogólny",
+          "type": "text",
+          "topic": "Rozmowy na każdy temat"
+        },
+        {
+          "id": "ch-text-2",
+          "name": "gry-i-zabawa",
+          "type": "text",
+          "topic": "Dzielenie się grami i memami"
+        },
+        {
+          "id": "ch-voice-1",
+          "name": "🔊 Pokój rozmów",
+          "type": "voice"
+        },
+        {
+          "id": "ch-voice-2",
+          "name": "🔊 Gaming Lounge",
+          "type": "voice"
+        }
+      ],
+      "createdAt": "2026-09-26T17:58:42.876Z"
+    },
+    {
+      "id": "srv-public-2",
+      "name": "Strefa Graczy & Esport",
+      "description": "Publiczny serwer do wspólnego grania w CS2, LoL, Minecraft i pogaduszek.",
+      "icon": "🕹️",
+      "color": "#23a55a",
+      "isPublic": true,
+      "ownerId": "user-demo-2",
+      "inviteCode": "GRACZE-2026",
+      "members": [
+        "user-demo-2"
+      ],
+      "channels": [
+        {
+          "id": "ch-text-g1",
+          "name": "szukam-ekipy",
+          "type": "text",
+          "topic": "Znajdź znajomych do gry"
+        },
+        {
+          "id": "ch-voice-g1",
+          "name": "🔊 CS / FPS Squad",
+          "type": "voice"
+        },
+        {
+          "id": "ch-voice-g2",
+          "name": "🔊 Chillout & Muzyka",
+          "type": "voice"
+        }
+      ],
+      "createdAt": "2026-09-26T17:58:42.876Z"
+    },
+    {
+      "id": "srv-1790451471096-upy0",
+      "name": "dddd",
+      "description": "",
+      "icon": "💬",
+      "color": "#5865f2",
+      "isPublic": false,
+      "ownerId": "user-1790445588678-pfkl",
+      "inviteCode": "DDDD-B1K1",
+      "members": [
+        "user-1790445588678-pfkl"
+      ],
+      "channels": [
+        {
+          "id": "ch-text-1790451471096-1",
+          "name": "ogólny",
+          "type": "text",
+          "topic": "Główny kanał tekstowy"
+        },
+        {
+          "id": "ch-text-1790451471096-2",
+          "name": "pogawędki",
+          "type": "text",
+          "topic": "Swobodne rozmowy"
+        },
+        {
+          "id": "ch-voice-1790451471096-1",
+          "name": "🔊 Pokój Główny",
+          "type": "voice"
+        },
+        {
+          "id": "ch-voice-1790451471096-2",
+          "name": "🔊 Rozmowy Ciche",
+          "type": "voice"
+        }
+      ],
+      "createdAt": "2026-09-26T19:37:51.096Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg-1",
+      "channelId": "ch-text-1",
+      "serverId": "srv-public-1",
+      "userId": "user-demo-1",
+      "text": "Witajcie na naszym nowym serwerze! Możecie pisać, tworzyć własne serwery i rozmawiać na kanałach głosowych 🎙️",
+      "createdAt": "2026-09-26T16:58:42.876Z"
+    },
+    {
+      "id": "msg-2",
+      "channelId": "ch-text-1",
+      "serverId": "srv-public-1",
+      "userId": "user-demo-2",
+      "text": "Super! Jakość dźwięku na kanale głosowym działa mega płynnie! 🚀",
+      "createdAt": "2026-09-26T17:28:42.876Z"
+    },
+    {
+      "id": "msg-1790454948354-o0xal",
+      "channelId": "ch-text-1790451471096-1",
+      "serverId": "srv-1790451471096-upy0",
+      "userId": "user-1790445588678-pfkl",
+      "text": "Dddd",
+      "createdAt": "2026-09-26T20:35:48.354Z"
+    }
+  ],
+  "directMessages": [
+    {
+      "id": "dm-msg-1",
+      "senderId": "user-demo-2",
+      "recipientId": "user-demo-1",
+      "text": "Hej Piotrek! Masz chwilę na szybką rozmowę na PV?",
+      "createdAt": "2026-09-26T17:48:42.876Z"
+    }
+  ],
+  "friendships": [
+    {
+      "user1Id": "user-demo-1",
+      "user2Id": "user-demo-2",
+      "status": "accepted",
+      "createdAt": "2026-09-26T17:58:42.876Z"
+    }
+  ]
+}
