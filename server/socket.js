@@ -245,6 +245,22 @@ export const setupSocketHandlers = (io) => {
       });
     });
 
+    socket.on('screen-share-started', ({ channelId }) => {
+      if (!channelId) return;
+      socket.to(`voice:${channelId}`).emit('user-started-screen-share', {
+        socketId: socket.id,
+        userId: currentUserId
+      });
+    });
+
+    socket.on('screen-share-stopped', ({ channelId }) => {
+      if (!channelId) return;
+      socket.to(`voice:${channelId}`).emit('user-stopped-screen-share', {
+        socketId: socket.id,
+        userId: currentUserId
+      });
+    });
+
     // --- BEZPOŚREDNIE ROZMOWY GŁOSOWE PV (1-on-1 Voice Call) ---
     socket.on('start-direct-call', ({ targetUserId }) => {
       if (!currentUserId || !targetUserId) return;
@@ -324,6 +340,39 @@ export const setupSocketHandlers = (io) => {
             userId: currentUserId,
             status: 'offline'
           });
+        }
+      }
+    });
+    // --- POWIADOMIENIA ZNAJOMYCH W CZASIE RZECZYWISTYM (DISCORD-STYLE) ---
+    socket.on('friend-request-notify', ({ targetUserId, senderUser }) => {
+      const recipientSockets = userSockets.get(targetUserId);
+      if (recipientSockets) {
+        for (const sockId of recipientSockets) {
+          io.to(sockId).emit('friend-request-received', {
+            sender: senderUser,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    });
+
+    socket.on('friend-accepted-notify', ({ targetUserId, user }) => {
+      const recipientSockets = userSockets.get(targetUserId);
+      if (recipientSockets) {
+        for (const sockId of recipientSockets) {
+          io.to(sockId).emit('friend-accepted', {
+            user,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    });
+
+    socket.on('friend-removed-notify', ({ targetUserId, userId }) => {
+      const recipientSockets = userSockets.get(targetUserId);
+      if (recipientSockets) {
+        for (const sockId of recipientSockets) {
+          io.to(sockId).emit('friend-removed', { userId });
         }
       }
     });

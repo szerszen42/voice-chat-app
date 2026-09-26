@@ -50,6 +50,9 @@ app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
     return next();
   }
+  if (req.path.startsWith('/assets/') || req.path.match(/\.(css|js|map|json|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/)) {
+    return res.status(404).send('Asset not found');
+  }
   const indexHtml = path.join(distPath, 'index.html');
   res.sendFile(indexHtml, (err) => {
     if (err) {

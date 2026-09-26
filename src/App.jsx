@@ -26,6 +26,8 @@ import { EditChannelModal } from './components/modals/EditChannelModal';
 import { IncomingCallModal } from './components/voice/IncomingCallModal';
 import { ActiveCallOverlay } from './components/voice/ActiveCallOverlay';
 import { InstallPwaModal } from './components/modals/InstallPwaModal';
+import { FriendsView } from './components/friends/FriendsView';
+import { VoiceStage } from './components/voice/VoiceStage';
 
 export const App = () => {
   const { user, loading: authLoading } = useAuth();
@@ -38,7 +40,11 @@ export const App = () => {
   const [activeServer, setActiveServer] = useState(null);
   const [activeChannel, setActiveChannel] = useState(null);
 
-  // Stan dla Wiadomości Prywatnych (DM / PV)
+  // Stan dla Wiadomości Prywatnych (DM / PV) oraz Znajomych (Discord-style)
+  const [activeDmTab, setActiveDmTab] = useState('friends'); // 'friends' | 'chat'
+  const [friends, setFriends] = useState([]);
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  const [outgoingRequests, setOutgoingRequests] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [activeDmUser, setActiveDmUser] = useState(null);
@@ -62,13 +68,25 @@ export const App = () => {
   const [editingServer, setEditingServer] = useState(null);
   const [isInstallPwaOpen, setIsInstallPwaOpen] = useState(false);
 
-  // Wczytaj serwery i użytkowników po zalogowaniu
+  // Wczytaj serwery, użytkowników i znajomych po zalogowaniu
   useEffect(() => {
     if (!user) return;
 
     loadServers();
     loadUsersAndConversations();
+    loadFriends();
   }, [user]);
+
+  const loadFriends = async () => {
+    try {
+      const res = await api.getFriends();
+      setFriends(res.friends || []);
+      setIncomingRequests(res.incoming || []);
+      setOutgoingRequests(res.outgoing || []);
+    } catch (err) {
+      console.error('Błąd wczytywania znajomych:', err);
+    }
+  };
 
   const loadServers = async () => {
     try {
@@ -123,43 +141,45 @@ export const App = () => {
     }
   };
 
-  // Wybór kanału na serwerze
+  // Wybór kanału na serwerze (tekstowy lub głosowy / stream)
   const selectChannel = async (channel) => {
-    if (activeChannel?.id && socket) {
+    if (activeChannel?.id && socket && activeChannel.type === 'text') {
       socket.emit('leave-text-channel', { channelId: activeChannel.id });
     }
 
     setActiveChannel(channel);
     setMobilePane('chat');
 
-    if (socket) {
-      socket.emit('join-text-channel', { channelId: channel.id });
-    }
+    if (channel.type === 'text') {
+      if (socket) {
+        socket.emit('join-text-channel', { channelId: channel.id });
+      }
 
-    try {
-      const res = await api.getChannelMessages(channel.id);
-      setMessages(res.messages || []);
-    } catch (err) {
-      console.error('Błąd wczytywania wiadomości kanału:', err);
+      try {
+        const res = await api.getChannelMessages(channel.id);
+        setMessages(res.messages || []);
+      } catch (err) {
+        console.error('Błąd wczytywania wiadomości kanału:', err);
+      }
     }
   };
 
-  // Przełączenie na Wiadomości Prywatne (DM)
+  // Przełączenie na Wiadomości Prywatne i Znajomych (DM)
   const selectDmMode = () => {
     setActiveView('dm');
     setActiveServerId(null);
     setActiveServer(null);
     setActiveChannel(null);
-
-    if (conversations.length > 0 && !activeDmUser) {
-      selectDmUser(conversations[0].user);
-    }
+    setActiveDmUser(null);
+    setActiveDmTab('friends');
+    setMobilePane('chat');
   };
 
   // Wybór znajomego do rozmowy PV
   const selectDmUser = async (targetUser) => {
     setActiveView('dm');
     setActiveDmUser(targetUser);
+    setActiveDmTab('chat');
     setMobilePane('chat');
 
     try {
@@ -230,12 +250,32 @@ export const App = () => {
       loadUsersAndConversations();
     };
 
+    const handleFriendRequestReceived = () => {
+      playMessageSound();
+      loadFriends();
+    };
+
+    const handleFriendAccepted = () => {
+      playMessageSound();
+      loadFriends();
+    };
+
+    const handleFriendRemoved = () => {
+      loadFriends();
+    };
+
     socket.on('new-message', handleNewChannelMessage);
     socket.on('new-direct-message', handleNewDirectMessage);
+    socket.on('friend-request-received', handleFriendRequestReceived);
+    socket.on('friend-accepted', handleFriendAccepted);
+    socket.on('friend-removed', handleFriendRemoved);
 
     return () => {
       socket.off('new-message', handleNewChannelMessage);
       socket.off('new-direct-message', handleNewDirectMessage);
+      socket.off('friend-request-received', handleFriendRequestReceived);
+      socket.off('friend-accepted', handleFriendAccepted);
+      socket.off('friend-removed', handleFriendRemoved);
     };
   }, [socket, activeChannel, activeDmUser, user]);
 
@@ -417,7 +457,14 @@ export const App = () => {
             conversations={conversations}
             allUsers={allUsers}
             activeDmUser={activeDmUser}
+            activeDmTab={activeDmTab}
+            incomingRequestsCount={incomingRequests.length}
             onSelectDmUser={selectDmUser}
+            onOpenFriendsView={() => {
+              setActiveDmUser(null);
+              setActiveDmTab('friends');
+              setMobilePane('chat');
+            }}
             onOpenSettings={() => setIsProfileSettingsOpen(true)}
             onOpenInstallPwa={() => setIsInstallPwaOpen(true)}
           />
@@ -440,22 +487,38 @@ export const App = () => {
         )}
       </div>
 
-      {/* 3. Główny obszar czatu */}
+      {/* 3. Główny obszar: Znajomi (FriendsView), Scena Głosowa/Stream (VoiceStage) lub Czat (ChatArea) */}
       <div className="flex-1 flex flex-col h-full min-w-0 z-10">
-        <ChatArea
-          channel={activeView === 'server' ? activeChannel : null}
-          dmUser={activeView === 'dm' ? activeDmUser : null}
-          messages={messages}
-          onSendMessage={handleSendMessage}
-          onSelectDmUser={(targetUser) => {
-            selectDmUser(targetUser);
-            setMobilePane('chat');
-          }}
-          serverMembers={activeServer?.membersList || []}
-          onToggleMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
-          onToggleMobileMembers={() => setMobilePane(prev => prev === 'members' ? 'chat' : 'members')}
-          mobilePane={mobilePane}
-        />
+        {activeView === 'dm' && !activeDmUser ? (
+          <FriendsView
+            friends={friends}
+            incomingRequests={incomingRequests}
+            outgoingRequests={outgoingRequests}
+            allUsers={allUsers}
+            onSelectDmUser={(targetUser) => {
+              selectDmUser(targetUser);
+            }}
+            onRefreshFriends={loadFriends}
+            onOpenMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
+          />
+        ) : activeView === 'server' && activeChannel?.type === 'voice' ? (
+          <VoiceStage />
+        ) : (
+          <ChatArea
+            channel={activeView === 'server' ? activeChannel : null}
+            dmUser={activeView === 'dm' ? activeDmUser : null}
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onSelectDmUser={(targetUser) => {
+              selectDmUser(targetUser);
+              setMobilePane('chat');
+            }}
+            serverMembers={activeServer?.membersList || []}
+            onToggleMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
+            onToggleMobileMembers={() => setMobilePane(prev => prev === 'members' ? 'chat' : 'members')}
+            mobilePane={mobilePane}
+          />
+        )}
       </div>
 
       {/* 4. Backdrop dla wysuwanego panelu członków na telefonie */}

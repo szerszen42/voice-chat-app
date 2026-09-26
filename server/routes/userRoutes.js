@@ -10,10 +10,67 @@ router.get('/', authenticateJWT, (req, res) => {
   res.json({ users });
 });
 
-// Pobierz znajomych zalogowanego użytkownika
+// Pobierz znajomych oraz oczekujące zaproszenia zalogowanego użytkownika
 router.get('/friends', authenticateJWT, (req, res) => {
   const friends = db.getFriendsForUser(req.user.id);
-  res.json({ friends });
+  const { incoming, outgoing } = db.getPendingRequestsForUser(req.user.id);
+  res.json({ friends, incoming, outgoing });
+});
+
+// Wyszukaj i wyślij zaproszenie do znajomych (np. wpisując nick)
+router.post('/friends/request', authenticateJWT, (req, res) => {
+  const { username } = req.body;
+  if (!username || !username.trim()) {
+    return res.status(400).json({ error: 'Wpisz nazwę użytkownika, którego chcesz dodać!' });
+  }
+
+  const result = db.sendFriendRequest(req.user.id, username);
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json(result);
+});
+
+// Zaakceptuj zaproszenie do znajomych
+router.post('/friends/accept', authenticateJWT, (req, res) => {
+  const { requestId, senderId } = req.body;
+  const targetId = requestId || senderId;
+  if (!targetId) {
+    return res.status(400).json({ error: 'Brak identyfikatora zaproszenia.' });
+  }
+
+  const result = db.acceptFriendRequest(req.user.id, targetId);
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json(result);
+});
+
+// Odrzuć lub anuluj zaproszenie do znajomych
+router.post('/friends/decline', authenticateJWT, (req, res) => {
+  const { requestId, targetId } = req.body;
+  const idToDecline = requestId || targetId;
+  if (!idToDecline) {
+    return res.status(400).json({ error: 'Brak identyfikatora zaproszenia.' });
+  }
+
+  const result = db.declineOrCancelFriendRequest(req.user.id, idToDecline);
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json(result);
+});
+
+// Usuń znajomego
+router.delete('/friends/:friendId', authenticateJWT, (req, res) => {
+  const result = db.removeFriend(req.user.id, req.params.friendId);
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
 });
 
 // Aktualizacja profilu (zmiana nazwy, awatara, statusu, bio)

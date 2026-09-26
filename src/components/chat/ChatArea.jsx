@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Hash, Phone, Smile, Send, Users, AtSign, Sparkles, MessageCircle, Copy, Check, Menu, X, ChevronLeft } from 'lucide-react';
+import { Hash, Phone, Smile, Send, Users, AtSign, Sparkles, MessageCircle, Copy, Check, Menu, X, ChevronLeft, UserPlus } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { useVoice } from '../../context/VoiceContext';
 import { playMessageSound } from '../../utils/sounds';
+import { api } from '../../utils/api';
 
 export const ChatArea = ({
   channel, // Jeśli na serwerze: { id, name, topic, serverId }
@@ -432,6 +433,22 @@ export const ChatArea = ({
               >
                 <Phone size={14} />
                 <span>Zadzwoń na PV</span>
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await api.sendFriendRequest(userContextMenu.targetUser.username);
+                    alert(res.autoAccepted ? 'Dodano do znajomych!' : 'Wysłano zaproszenie do znajomych!');
+                  } catch (err) {
+                    alert(err.message || 'Nie udało się wysłać zaproszenia.');
+                  }
+                  setUserContextMenu(null);
+                }}
+                className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors"
+              >
+                <UserPlus size={14} />
+                <span>Dodaj do znajomych</span>
               </button>
             </>
           )}

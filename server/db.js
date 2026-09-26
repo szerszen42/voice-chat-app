@@ -206,19 +206,15 @@ class JSONDatabase {
     return dm;
   }
 
-  // --- Znajomi ---
+  // --- Znajomi i Zaproszenia do znajomych (Discord-style) ---
   getFriendsForUser(userId) {
     const friends = [];
+    if (!this.data.friendships) this.data.friendships = [];
     for (const f of this.data.friendships) {
       if (f.status === 'accepted') {
-        if (f.user1Id === userId) {
-          const friend = this.findUserById(f.user2Id);
-          if (friend) {
-            const { passwordHash, ...safe } = friend;
-            friends.push(safe);
-          }
-        } else if (f.user2Id === userId) {
-          const friend = this.findUserById(f.user1Id);
+        const friendId = f.user1Id === userId ? f.user2Id : (f.user2Id === userId ? f.user1Id : null);
+        if (friendId) {
+          const friend = this.findUserById(friendId);
           if (friend) {
             const { passwordHash, ...safe } = friend;
             friends.push(safe);
@@ -229,7 +225,155 @@ class JSONDatabase {
     return friends;
   }
 
+  getPendingRequestsForUser(userId) {
+    if (!this.data.friendships) this.data.friendships = [];
+    const incoming = [];
+    const outgoing = [];
+
+    for (const f of this.data.friendships) {
+      if (f.status === 'pending') {
+        const senderId = f.requesterId || f.user1Id;
+        const recipientId = (f.user1Id === senderId) ? f.user2Id : f.user1Id;
+
+        if (recipientId === userId) {
+          const senderUser = this.findUserById(senderId);
+          if (senderUser) {
+            const { passwordHash, ...safe } = senderUser;
+            incoming.push({
+              id: f.id || `${f.user1Id}-${f.user2Id}`,
+              senderId,
+              user: safe,
+              createdAt: f.createdAt
+            });
+          }
+        } else if (senderId === userId) {
+          const recipientUser = this.findUserById(recipientId);
+          if (recipientUser) {
+            const { passwordHash, ...safe } = recipientUser;
+            outgoing.push({
+              id: f.id || `${f.user1Id}-${f.user2Id}`,
+              recipientId,
+              user: safe,
+              createdAt: f.createdAt
+            });
+          }
+        }
+      }
+    }
+    return { incoming, outgoing };
+  }
+
+  sendFriendRequest(requesterId, targetQuery) {
+    if (!this.data.friendships) this.data.friendships = [];
+    const cleanQuery = targetQuery.trim().toLowerCase().replace(/^@/, '');
+
+    const targetUser = this.data.users.find(u => 
+      u.username.toLowerCase() === cleanQuery ||
+      (u.email && u.email.toLowerCase() === cleanQuery) ||
+      u.id === cleanQuery
+    );
+
+    if (!targetUser) {
+      return { error: 'Nie znaleziono użytkownika o takiej nazwie. Upewnij się, że nick jest poprawny!' };
+    }
+
+    if (targetUser.id === requesterId) {
+      return { error: 'Nie możesz wysłać zaproszenia do samego siebie!' };
+    }
+
+    const existing = this.data.friendships.find(f => 
+      (f.user1Id === requesterId && f.user2Id === targetUser.id) ||
+      (f.user1Id === targetUser.id && f.user2Id === requesterId)
+    );
+
+    if (existing) {
+      if (existing.status === 'accepted') {
+        return { error: `Użytkownik ${targetUser.displayName || targetUser.username} jest już Twoim znajomym!` };
+      }
+      if (existing.status === 'pending') {
+        const originalRequester = existing.requesterId || existing.user1Id;
+        if (originalRequester === requesterId) {
+          return { error: 'Wysłałeś już zaproszenie do tego użytkownika. Oczekuje na akceptację!' };
+        } else {
+          // Druga osoba też wysłała - automatycznie akceptujemy!
+          existing.status = 'accepted';
+          this.save();
+          const { passwordHash, ...safeTarget } = targetUser;
+          return { success: true, autoAccepted: true, friend: safeTarget };
+        }
+      }
+    }
+
+    const newRequest = {
+      id: `freq-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user1Id: requesterId,
+      user2Id: targetUser.id,
+      requesterId: requesterId,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    this.data.friendships.push(newRequest);
+    this.save();
+
+    const { passwordHash, ...safeTarget } = targetUser;
+    return { success: true, request: newRequest, targetUser: safeTarget };
+  }
+
+  acceptFriendRequest(userId, senderIdOrRequestId) {
+    if (!this.data.friendships) this.data.friendships = [];
+    const friendship = this.data.friendships.find(f => 
+      f.id === senderIdOrRequestId ||
+      ((f.user1Id === userId && f.user2Id === senderIdOrRequestId) || (f.user2Id === userId && f.user1Id === senderIdOrRequestId))
+    );
+
+    if (!friendship) {
+      return { error: 'Nie znaleziono takiego zaproszenia.' };
+    }
+
+    friendship.status = 'accepted';
+    this.save();
+
+    const friendId = friendship.user1Id === userId ? friendship.user2Id : friendship.user1Id;
+    const friend = this.findUserById(friendId);
+    const safeFriend = friend ? (({ passwordHash, ...rest }) => rest)(friend) : null;
+
+    return { success: true, friend: safeFriend, friendId };
+  }
+
+  declineOrCancelFriendRequest(userId, targetIdOrRequestId) {
+    if (!this.data.friendships) this.data.friendships = [];
+    const index = this.data.friendships.findIndex(f => 
+      f.id === targetIdOrRequestId ||
+      ((f.user1Id === userId && f.user2Id === targetIdOrRequestId) || (f.user2Id === userId && f.user1Id === targetIdOrRequestId))
+    );
+
+    if (index !== -1) {
+      const removed = this.data.friendships.splice(index, 1)[0];
+      this.save();
+      const otherUserId = removed.user1Id === userId ? removed.user2Id : removed.user1Id;
+      return { success: true, otherUserId };
+    }
+    return { error: 'Nie znaleziono zaproszenia do usunięcia.' };
+  }
+
+  removeFriend(userId, friendId) {
+    if (!this.data.friendships) this.data.friendships = [];
+    const index = this.data.friendships.findIndex(f => 
+      ((f.user1Id === userId && f.user2Id === friendId) || (f.user1Id === friendId && f.user2Id === userId)) &&
+      f.status === 'accepted'
+    );
+
+    if (index !== -1) {
+      this.data.friendships.splice(index, 1);
+      this.save();
+      return { success: true };
+    }
+    return { error: 'Nie znaleziono takiego znajomego.' };
+  }
+
   addFriendship(user1Id, user2Id) {
+    if (!this.data.friendships) this.data.friendships = [];
     const existing = this.data.friendships.find(f => 
       (f.user1Id === user1Id && f.user2Id === user2Id) ||
       (f.user1Id === user2Id && f.user2Id === user1Id)
@@ -238,8 +382,10 @@ class JSONDatabase {
       existing.status = 'accepted';
     } else {
       this.data.friendships.push({
+        id: `freq-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         user1Id,
         user2Id,
+        requesterId: user1Id,
         status: 'accepted',
         createdAt: new Date().toISOString()
       });

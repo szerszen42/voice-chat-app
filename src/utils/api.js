@@ -35,6 +35,10 @@ export const api = {
   // Users & Profile
   getAllUsers: () => request('/users'),
   getFriends: () => request('/users/friends'),
+  sendFriendRequest: (username) => request('/users/friends/request', { method: 'POST', body: JSON.stringify({ username }) }),
+  acceptFriendRequest: (senderId, requestId) => request('/users/friends/accept', { method: 'POST', body: JSON.stringify({ senderId, requestId }) }),
+  declineFriendRequest: (senderId, requestId) => request('/users/friends/decline', { method: 'POST', body: JSON.stringify({ senderId, requestId }) }),
+  removeFriend: (friendId) => request(`/users/friends/${friendId}`, { method: 'DELETE' }),
   updateProfile: (profileData) => request('/users/profile', { method: 'PATCH', body: JSON.stringify(profileData) }),
 
   // Servers

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserPlus, Search, MessageCircle, Phone, Copy, Check } from 'lucide-react';
+import { UserPlus, Search, MessageCircle, Phone, Copy, Check, Users } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { BottomUserBar } from '../common/BottomUserBar';
 import { useSocket } from '../../context/SocketContext';
@@ -10,7 +10,10 @@ export const DirectMessageSidebar = ({
   conversations = [],
   allUsers = [],
   activeDmUser,
+  activeDmTab = 'chat', // 'friends' | 'chat'
+  incomingRequestsCount = 0,
   onSelectDmUser,
+  onOpenFriendsView,
   onOpenSettings,
   onOpenInstallPwa
 }) => {
@@ -111,7 +114,30 @@ export const DirectMessageSidebar = ({
       )}
 
       {/* Lista rozmów lub lista wszystkich użytkowników */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 scrollbar-thin">
+        {/* Przycisk Znajomi w stylu Discorda */}
+        <button
+          onClick={() => {
+            if (onOpenFriendsView) onOpenFriendsView();
+            setShowUserSearch(false);
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-semibold text-xs transition-colors mb-2 group ${
+            activeDmTab === 'friends' && !activeDmUser
+              ? 'bg-dark-600 text-white shadow-sm'
+              : 'text-dark-300 hover:bg-dark-700/60 hover:text-dark-100'
+          }`}
+        >
+          <div className="flex items-center space-x-3">
+            <Users size={18} className={activeDmTab === 'friends' && !activeDmUser ? 'text-white' : 'text-dark-400 group-hover:text-dark-200'} />
+            <span className="text-sm">Znajomi</span>
+          </div>
+          {incomingRequestsCount > 0 && (
+            <span className="px-1.5 py-0.5 bg-brand-danger text-white rounded-full text-[10px] font-bold">
+              {incomingRequestsCount}
+            </span>
+          )}
+        </button>
+
         {showUserSearch ? (
           <div>
             <div className="px-2 pb-1.5 text-xs font-bold text-brand-500 uppercase tracking-wider">

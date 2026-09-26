@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Headphones, Settings, PhoneOff, Check, ChevronRight, Volume2, LogOut, User } from 'lucide-react';
+import { Mic, MicOff, Headphones, Settings, PhoneOff, Check, ChevronRight, Volume2, LogOut, User, MonitorUp, MonitorOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useVoice } from '../../context/VoiceContext';
 import { useSocket } from '../../context/SocketContext';
@@ -16,6 +16,9 @@ export const BottomUserBar = ({ onOpenSettings }) => {
     activeVoiceChannel,
     leaveVoiceChannel,
     speakingUsers,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare,
     audioInputDevices,
     audioOutputDevices,
     selectedAudioInput,
@@ -110,13 +113,26 @@ export const BottomUserBar = ({ onOpenSettings }) => {
               <span className="text-dark-300 truncate">{activeVoiceChannel.channelName}</span>
             </div>
           </div>
-          <button
-            onClick={() => leaveVoiceChannel(true)}
-            className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-md transition-colors"
-            title="Rozłącz się z kanałem"
-          >
-            <PhoneOff size={16} />
-          </button>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+              className={`p-1.5 rounded-md transition-colors ${
+                isScreenSharing
+                  ? 'bg-red-600 text-white animate-pulse'
+                  : 'hover:bg-dark-700 text-dark-300 hover:text-white'
+              }`}
+              title={isScreenSharing ? 'Zatrzymaj udostępnianie ekranu' : 'Udostępnij ekran'}
+            >
+              {isScreenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />}
+            </button>
+            <button
+              onClick={() => leaveVoiceChannel(true)}
+              className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-md transition-colors"
+              title="Rozłącz się z kanałem"
+            >
+              <PhoneOff size={16} />
+            </button>
+          </div>
         </div>
       )}
 

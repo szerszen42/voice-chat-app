@@ -248,7 +248,10 @@ export const ChannelSidebar = ({
                   {/* Przycisk dołączenia do pokoju */}
                   <div
                     onContextMenu={(e) => handleChannelContextMenu(e, channel)}
-                    onClick={() => joinVoiceChannel(channel, server.id)}
+                    onClick={() => {
+                      joinVoiceChannel(channel, server.id);
+                      if (onSelectChannel) onSelectChannel(channel);
+                    }}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md transition-colors text-left group cursor-pointer ${
                       isConnectedHere
                         ? 'bg-emerald-500/15 text-emerald-400 font-medium'
