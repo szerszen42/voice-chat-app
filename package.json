@@ -11,6 +11,8 @@
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build",
+    "postinstall": "vite build",
+    "render-build": "vite build",
     "preview": "vite preview",
     "cap:build": "vite build && npx cap sync android",
     "cap:open": "npx cap open android"
@@ -19,6 +21,10 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
     "bcryptjs": "^2.4.3",
     "concurrently": "^8.2.2",
     "cors": "^2.8.5",
@@ -26,19 +32,15 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.395.0",
+    "postcss": "^8.4.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io": "^4.7.5",
-    "socket.io-client": "^4.7.5"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.19",
-    "electron": "^31.7.7",
-    "postcss": "^8.4.38",
+    "socket.io-client": "^4.7.5",
     "tailwindcss": "^3.4.4",
     "vite": "^5.3.1"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
   }
 }
