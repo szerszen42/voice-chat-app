@@ -356,6 +356,7 @@ export const ChannelSidebar = ({
             )}
           </div>
 
+          <div className="space-y-1">
             {voiceChannels.map((channel) => {
               const isConnectedHere = activeVoiceChannel?.channelId === channel.id;
               const rawUsers = voiceStates[channel.id] || [];
