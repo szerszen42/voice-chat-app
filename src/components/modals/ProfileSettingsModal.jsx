@@ -159,6 +159,16 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
 
       if (socket) {
         socket.emit('set-status', { status });
+        socket.emit('user-profile-updated', {
+          userId: user.id,
+          displayName: displayName.trim(),
+          avatarUrl,
+          avatarColor,
+          avatarEmoji,
+          bannerColor,
+          customStatus: customStatus.trim(),
+          status
+        });
       }
 
       setSavedSuccess(true);

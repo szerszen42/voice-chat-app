@@ -275,11 +275,18 @@ export const App = () => {
       loadFriends();
     };
 
+    const handleServerDataChanged = ({ serverId }) => {
+      if (activeServerId === serverId) {
+        selectServer(serverId);
+      }
+    };
+
     socket.on('new-message', handleNewChannelMessage);
     socket.on('new-direct-message', handleNewDirectMessage);
     socket.on('friend-request-received', handleFriendRequestReceived);
     socket.on('friend-accepted', handleFriendAccepted);
     socket.on('friend-removed', handleFriendRemoved);
+    socket.on('server-data-changed', handleServerDataChanged);
 
     return () => {
       socket.off('new-message', handleNewChannelMessage);
@@ -287,8 +294,9 @@ export const App = () => {
       socket.off('friend-request-received', handleFriendRequestReceived);
       socket.off('friend-accepted', handleFriendAccepted);
       socket.off('friend-removed', handleFriendRemoved);
+      socket.off('server-data-changed', handleServerDataChanged);
     };
-  }, [socket, activeChannel, activeDmUser, user]);
+  }, [socket, activeChannel, activeDmUser, activeServerId, user]);
 
   // Wysyłanie wiadomości
   const handleSendMessage = (text) => {
@@ -492,6 +500,7 @@ export const App = () => {
             }}
             onOpenEditChannel={(channel) => setEditingChannel(channel)}
             onDeleteChannel={handleDeleteChannel}
+            onOpenEditServer={(server) => setEditingServer(server)}
             onOpenSettings={() => setIsProfileSettingsOpen(true)}
             onLeaveServer={handleLeaveOrDeleteServer}
             onDeleteServer={handleLeaveOrDeleteServer}
@@ -520,6 +529,7 @@ export const App = () => {
           <VoiceStage onOpenUserProfile={handleOpenUserProfile} />
         ) : (
           <ChatArea
+            server={activeServer}
             channel={activeView === 'server' ? activeChannel : null}
             dmUser={activeView === 'dm' ? activeDmUser : null}
             messages={messages}
@@ -533,6 +543,7 @@ export const App = () => {
             onToggleMobileMembers={() => setMobilePane(prev => prev === 'members' ? 'chat' : 'members')}
             mobilePane={mobilePane}
             onOpenUserProfile={handleOpenUserProfile}
+            onRefreshServer={(id) => selectServer(id || activeServerId)}
           />
         )}
       </div>
@@ -574,8 +585,19 @@ export const App = () => {
             >
               <UserAvatar user={member} size="sm" />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate text-white">{member.displayName || member.username}</div>
-                {member.customStatus && <div className="text-[10px] text-dark-400 truncate">{member.customStatus}</div>}
+                <div
+                  className="text-sm font-semibold truncate"
+                  style={{ color: member.highestRole?.color || '#ffffff' }}
+                >
+                  {member.displayName || member.username}
+                </div>
+                {member.customStatus ? (
+                  <div className="text-[10px] text-dark-400 truncate">{member.customStatus}</div>
+                ) : member.highestRole && member.highestRole.id !== 'role-everyone' ? (
+                  <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: member.highestRole.color }}>
+                    {member.highestRole.name}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
@@ -604,6 +626,7 @@ export const App = () => {
         server={editingServer}
         onClose={() => setEditingServer(null)}
         onSave={handleSaveEditedServer}
+        onRefreshServer={(id) => selectServer(id || activeServerId)}
       />
 
       <JoinServerModal

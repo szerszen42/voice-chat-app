@@ -1203,6 +1203,11 @@ export const VoiceProvider = ({ children }) => {
       }
     });
 
+    socket.on('forced-voice-channel-switch', ({ channelId, channelName, serverId }) => {
+      console.log('Przeniesiono do kanału głosowego:', channelName);
+      joinVoiceChannel({ id: channelId, name: channelName, type: 'voice' }, serverId);
+    });
+
     socket.on('user-speaking-changed', ({ userId, isSpeaking }) => {
       setSpeakingUsers(prev => {
         const next = new Set(prev);
@@ -1223,8 +1228,18 @@ export const VoiceProvider = ({ children }) => {
       socket.off('direct-call-ended');
       socket.off('direct-call-signal');
       socket.off('user-speaking-changed');
+      socket.off('forced-voice-channel-switch');
     };
   }, [socket, user, isDeafened, activeVoiceChannel, selectedAudioOutput]);
+
+  const moveVoiceUser = (targetUserId, targetChannelId, serverId) => {
+    if (!socket || !targetUserId || !targetChannelId || !serverId) return;
+    socket.emit('move-voice-user', {
+      targetUserId,
+      targetChannelId,
+      serverId
+    });
+  };
 
   const toggleMute = () => {
     const nextMuted = !isMuted;
@@ -1288,6 +1303,7 @@ export const VoiceProvider = ({ children }) => {
       micVolume,
       joinVoiceChannel,
       leaveVoiceChannel,
+      moveVoiceUser,
       toggleMute,
       toggleDeafen,
       directCallState,

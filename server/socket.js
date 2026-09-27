@@ -77,6 +77,7 @@ export const setupSocketHandlers = (io) => {
           displayName: user.displayName,
           avatarColor: user.avatarColor,
           avatarEmoji: user.avatarEmoji,
+          avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
           status: user.status
         }
       });
@@ -127,6 +128,7 @@ export const setupSocketHandlers = (io) => {
           displayName: user.displayName,
           avatarColor: user.avatarColor,
           avatarEmoji: user.avatarEmoji,
+          avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
           status: user.status
         }
       };
@@ -160,6 +162,10 @@ export const setupSocketHandlers = (io) => {
         displayName: user.displayName,
         avatarColor: user.avatarColor,
         avatarEmoji: user.avatarEmoji,
+        avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
+        bannerColor: user.bannerColor || '#5865f2',
+        status: user.status || 'online',
+        customStatus: user.customStatus || '',
         socketId: socket.id
       };
 
@@ -261,6 +267,83 @@ export const setupSocketHandlers = (io) => {
       });
     });
 
+    // --- PRZENOSZENIE UŻYTKOWNIKÓW MIĘDZY KANAŁAMI GŁOSOWYMI (MOVE MEMBERS) ---
+    socket.on('move-voice-user', ({ serverId, targetUserId, targetChannelId }) => {
+      if (!currentUserId || !serverId || !targetUserId || !targetChannelId) return;
+
+      const server = db.getServerById(serverId);
+      if (!server) return;
+
+      // Sprawdź uprawnienia do przenoszenia (MOVE_MEMBERS lub ADMINISTRATOR lub właściciel)
+      if (!db.hasServerPermission(server, currentUserId, 'MOVE_MEMBERS')) {
+        socket.emit('error-notify', { message: 'Brak uprawnień do przenoszenia członków.' });
+        return;
+      }
+
+      const targetChannel = (server.channels || []).find(c => c.id === targetChannelId && c.type === 'voice');
+      if (!targetChannel) return;
+
+      const targetSockets = userSockets.get(targetUserId);
+      if (targetSockets && targetSockets.size > 0) {
+        targetSockets.forEach(sId => {
+          io.to(sId).emit('forced-voice-channel-switch', {
+            channelId: targetChannel.id,
+            channelName: targetChannel.name,
+            serverId
+          });
+        });
+      }
+    });
+
+    // Powiadomienie o zmianie ról / struktury serwera
+    socket.on('notify-server-updated', ({ serverId }) => {
+      io.emit('server-data-changed', { serverId });
+    });
+
+    // Powiadomienie o aktualizacji profilu (natychmiastowa zmiana awatara w pokojach głosowych i na czacie)
+    socket.on('user-profile-updated', ({ userId, displayName, avatarUrl, avatarColor, avatarEmoji, bannerColor, customStatus, status }) => {
+      const uId = userId || currentUserId;
+      if (!uId) return;
+
+      // Zaktualizuj stan użytkownika we wszystkich aktywnych pokojach głosowych
+      voiceRooms.forEach((room, channelId) => {
+        let roomChanged = false;
+        let serverId = null;
+        room.forEach((peer) => {
+          if (peer.user.id === uId) {
+            serverId = peer.serverId;
+            if (displayName) peer.user.displayName = displayName;
+            if (avatarUrl !== undefined) peer.user.avatarUrl = avatarUrl;
+            if (avatarColor) peer.user.avatarColor = avatarColor;
+            if (avatarEmoji) peer.user.avatarEmoji = avatarEmoji;
+            if (bannerColor) peer.user.bannerColor = bannerColor;
+            if (customStatus !== undefined) peer.user.customStatus = customStatus;
+            roomChanged = true;
+          }
+        });
+
+        if (roomChanged) {
+          io.emit('voice-state-update', {
+            channelId,
+            serverId,
+            users: Array.from(room.values()).map(r => r.user)
+          });
+        }
+      });
+
+      // Rozgłoś do wszystkich o zmianie profilu
+      io.emit('user-profile-changed', {
+        userId: uId,
+        displayName,
+        avatarUrl,
+        avatarColor,
+        avatarEmoji,
+        bannerColor,
+        customStatus,
+        status
+      });
+    });
+
     // --- BEZPOŚREDNIE ROZMOWY GŁOSOWE PV (1-on-1 Voice Call) ---
     socket.on('start-direct-call', ({ targetUserId }) => {
       if (!currentUserId || !targetUserId) return;
@@ -277,6 +360,7 @@ export const setupSocketHandlers = (io) => {
               displayName: caller.displayName,
               avatarColor: caller.avatarColor,
               avatarEmoji: caller.avatarEmoji,
+              avatarUrl: caller.avatarUrl || caller.avatar || caller.avatarImage || null,
               socketId: socket.id
             }
           });
@@ -296,6 +380,7 @@ export const setupSocketHandlers = (io) => {
           displayName: accepter.displayName,
           avatarColor: accepter.avatarColor,
           avatarEmoji: accepter.avatarEmoji,
+          avatarUrl: accepter.avatarUrl || accepter.avatar || accepter.avatarImage || null,
           socketId: socket.id
         }
       });

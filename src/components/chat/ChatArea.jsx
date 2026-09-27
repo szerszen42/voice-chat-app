@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Hash, Phone, Smile, Send, Users, AtSign, Sparkles, MessageCircle, Copy, Check, Menu, X, ChevronLeft, UserPlus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  Hash, Phone, Smile, Send, Users, AtSign, Sparkles, MessageCircle, 
+  Copy, Check, Menu, X, ChevronLeft, UserPlus, Shield, CheckSquare, Square
+} from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -8,6 +11,7 @@ import { playMessageSound } from '../../utils/sounds';
 import { api } from '../../utils/api';
 
 export const ChatArea = ({
+  server,  // Pełny obiekt aktywnego serwera z roles, ownerId, currentUserPermissions
   channel, // Jeśli na serwerze: { id, name, topic, serverId }
   dmUser,  // Jeśli na PV: { id, displayName, username, avatarColor, avatarEmoji, status, customStatus }
   messages = [],
@@ -17,7 +21,8 @@ export const ChatArea = ({
   onToggleMobileSidebar,
   onToggleMobileMembers,
   mobilePane = 'chat',
-  onOpenUserProfile
+  onOpenUserProfile,
+  onRefreshServer
 }) => {
   const { user } = useAuth();
   const { socket, userStatuses } = useSocket();
@@ -28,7 +33,7 @@ export const ChatArea = ({
   const [showMembersList, setShowMembersList] = useState(true);
   const [typingUsers, setTypingUsers] = useState(new Set());
 
-  // Menu kontekstowe (PPM na użytkownika lub wiadomość)
+  // Menu kontekstowe (LPM / PPM na użytkownika lub wiadomość)
   const [userContextMenu, setUserContextMenu] = useState(null); // { x, y, targetUser }
   const [msgContextMenu, setMsgContextMenu] = useState(null); // { x, y, message }
   const [copiedText, setCopiedText] = useState(false);
@@ -37,7 +42,12 @@ export const ChatArea = ({
   const typingTimeoutRef = useRef(null);
   const menuRef = useRef(null);
 
-  // Zamykanie menu po kliknięciu
+  // Uprawnienia zalogowanego użytkownika
+  const isOwner = server?.ownerId === user?.id;
+  const userPermissions = server?.currentUserPermissions || [];
+  const canManageRoles = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_ROLES');
+
+  // Zamykanie menu po kliknięciu poza nimi
   useEffect(() => {
     const handleGlobalClick = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -122,14 +132,19 @@ export const ChatArea = ({
     setShowEmojiPicker(false);
   };
 
-  const handleUserRightClick = (e, targetUser) => {
+  // Otwieranie menu użytkownika (LPM lub PPM)
+  const handleUserClickOrContextMenu = (e, targetUser) => {
     if (!targetUser) return;
     e.preventDefault();
     e.stopPropagation();
     setMsgContextMenu(null);
+
+    const clientX = e.clientX || e.touches?.[0]?.clientX || 100;
+    const clientY = e.clientY || e.touches?.[0]?.clientY || 100;
+
     setUserContextMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x: Math.min(clientX, window.innerWidth - 220),
+      y: Math.min(clientY, window.innerHeight - 260),
       targetUser
     });
   };
@@ -139,8 +154,8 @@ export const ChatArea = ({
     e.stopPropagation();
     setUserContextMenu(null);
     setMsgContextMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x: Math.min(e.clientX, window.innerWidth - 180),
+      y: Math.min(e.clientY, window.innerHeight - 100),
       message
     });
   };
@@ -150,6 +165,83 @@ export const ChatArea = ({
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
   };
+
+  // Szybkie przełączanie roli dla użytkownika z poziomu menu kontekstowego
+  const toggleRoleForMember = async (memberId, roleId) => {
+    if (!server) return;
+    const currentMemberRoles = server.memberRoles?.[memberId] || [];
+    const hasRole = currentMemberRoles.includes(roleId);
+
+    const nextRoles = hasRole
+      ? currentMemberRoles.filter(id => id !== roleId)
+      : [...currentMemberRoles, roleId];
+
+    try {
+      await api.setMemberRoles(server.id, memberId, nextRoles);
+      if (socket) socket.emit('notify-server-updated', { serverId: server.id });
+      if (onRefreshServer) onRefreshServer(server.id);
+    } catch (err) {
+      alert(err.message || 'Nie udało się nadać roli.');
+    }
+  };
+
+  // --- PODZIAŁ NA ROLE NA LIŚCIE CZŁONKÓW (DISCORD-STYLE ROLE GROUPING) ---
+  const memberGroups = useMemo(() => {
+    if (!serverMembers || serverMembers.length === 0) return [];
+
+    const groupsMap = new Map();
+    const onlineOthers = [];
+    const offlineOthers = [];
+
+    serverMembers.forEach(member => {
+      const status = userStatuses[member.id] || member.status || 'offline';
+      const isOnline = status !== 'offline';
+      const highestRole = member.highestRole;
+
+      // Jeśli użytkownik ma rolę z hoist = true (wyróżnioną), trafia do grupy tej roli
+      if (highestRole && highestRole.hoist && highestRole.id !== 'role-everyone') {
+        const groupKey = highestRole.id;
+        if (!groupsMap.has(groupKey)) {
+          groupsMap.set(groupKey, {
+            id: highestRole.id,
+            name: highestRole.name,
+            color: highestRole.color || '#99aab5',
+            position: highestRole.position || 0,
+            members: []
+          });
+        }
+        groupsMap.get(groupKey).members.push(member);
+      } else {
+        if (isOnline) {
+          onlineOthers.push(member);
+        } else {
+          offlineOthers.push(member);
+        }
+      }
+    });
+
+    const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => (b.position || 0) - (a.position || 0));
+
+    const result = [...sortedGroups];
+    if (onlineOthers.length > 0) {
+      result.push({
+        id: 'online',
+        name: 'ONLINE',
+        color: '#3ba55c',
+        members: onlineOthers
+      });
+    }
+    if (offlineOthers.length > 0) {
+      result.push({
+        id: 'offline',
+        name: 'OFFLINE',
+        color: '#747f8d',
+        members: offlineOthers
+      });
+    }
+
+    return result;
+  }, [serverMembers, userStatuses]);
 
   const title = channel ? `# ${channel.name}` : (dmUser ? (dmUser.displayName || dmUser.username) : '');
   const subtitle = channel ? (channel.topic || `Początek kanału #${channel.name}`) : (dmUser ? `@${dmUser.username}` : '');
@@ -176,7 +268,8 @@ export const ChatArea = ({
             ) : dmUser ? (
               <div
                 className="flex items-center space-x-2 cursor-pointer"
-                onContextMenu={(e) => handleUserRightClick(e, dmUser)}
+                onContextMenu={(e) => handleUserClickOrContextMenu(e, dmUser)}
+                onClick={(e) => handleUserClickOrContextMenu(e, dmUser)}
               >
                 <UserAvatar user={dmUser} size="sm" statusOverride={activeStatus} />
               </div>
@@ -251,6 +344,10 @@ export const ChatArea = ({
             const author = msg.user || (isOwn ? user : dmUser);
             const timeStr = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+            // Sprawdź rolę autora na serwerze
+            const authorMember = serverMembers.find(m => m.id === author?.id);
+            const authorHighestRole = authorMember?.highestRole;
+
             return (
               <div
                 key={msg.id || index}
@@ -266,7 +363,7 @@ export const ChatArea = ({
                   }}
                   onContextMenu={(e) => {
                     e.stopPropagation();
-                    handleUserRightClick(e, author);
+                    handleUserClickOrContextMenu(e, author);
                   }}
                   className="cursor-pointer hover:opacity-85 transition-opacity"
                   title="Kliknij, aby otworzyć profil"
@@ -278,18 +375,32 @@ export const ChatArea = ({
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onOpenUserProfile && author?.id) {
-                          onOpenUserProfile(author.id);
-                        }
+                        handleUserClickOrContextMenu(e, author);
                       }}
                       onContextMenu={(e) => {
                         e.stopPropagation();
-                        handleUserRightClick(e, author);
+                        handleUserClickOrContextMenu(e, author);
                       }}
-                      className="text-sm font-semibold text-white hover:underline cursor-pointer"
+                      className="text-sm font-semibold hover:underline cursor-pointer"
+                      style={{ color: authorHighestRole?.color || '#ffffff' }}
                     >
                       {author?.displayName || author?.username || 'Użytkownik'}
                     </span>
+
+                    {/* Plakietka najwyższej roli */}
+                    {authorHighestRole && authorHighestRole.id !== 'role-everyone' && (
+                      <span
+                        className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider"
+                        style={{
+                          backgroundColor: `${authorHighestRole.color}25`,
+                          color: authorHighestRole.color,
+                          border: `1px solid ${authorHighestRole.color}50`
+                        }}
+                      >
+                        {authorHighestRole.name}
+                      </span>
+                    )}
+
                     <span className="text-[10px] text-dark-400">{timeStr}</span>
                   </div>
                   <div className="text-sm text-dark-100 whitespace-pre-wrap break-words mt-0.5 leading-relaxed selection:bg-brand-500 selection:text-white select-text">
@@ -363,61 +474,82 @@ export const ChatArea = ({
         </div>
       </div>
 
-      {/* Prawa kolumna: Lista członków serwera (Desktop) */}
+      {/* Prawa kolumna: Lista członków serwera z podziałem na role (Desktop) */}
       {channel && showMembersList && serverMembers.length > 0 && (
-        <div className="hidden md:flex w-56 bg-dark-800 border-l border-dark-900/60 flex-col h-full py-3 px-2 select-none">
-          <div className="px-2 pb-2 text-xs font-semibold text-dark-400 uppercase tracking-wider">
-            Członkowie serwera — {serverMembers.length}
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-1 scrollbar-thin">
-            {serverMembers.map((member) => {
-              const status = userStatuses[member.id] || member.status || 'offline';
-              return (
+        <div className="hidden md:flex w-60 bg-dark-800 border-l border-dark-900/60 flex-col h-full py-2 px-2 select-none">
+          <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin">
+            {memberGroups.map((group) => (
+              <div key={group.id} className="space-y-0.5">
+                {/* Nagłówek grupy roli */}
                 <div
-                  key={member.id}
-                  onContextMenu={(e) => handleUserRightClick(e, member)}
-                  onClick={() => {
-                    if (onOpenUserProfile) {
-                      onOpenUserProfile(member.id);
-                    } else if (member.id !== user?.id && onSelectDmUser) {
-                      onSelectDmUser(member);
-                    }
-                  }}
-                  className="flex items-center space-x-2.5 px-2 py-1.5 rounded-md hover:bg-dark-700/60 cursor-pointer transition-colors group"
-                  title={`${member.displayName || member.username} (Kliknij profil / Prawy klik dla opcji)`}
+                  className="px-2 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider flex items-center justify-between"
+                  style={{ color: group.color || '#949ba4' }}
                 >
-                  <UserAvatar user={member} size="sm" statusOverride={status} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-dark-200 group-hover:text-white truncate">
-                      {member.displayName || member.username}
-                    </div>
-                    {member.customStatus && (
-                      <div className="text-[10px] text-dark-400 truncate">
-                        {member.customStatus}
-                      </div>
-                    )}
-                  </div>
+                  <span className="truncate">{group.name}</span>
+                  <span className="text-[10px] opacity-75">{group.members.length}</span>
                 </div>
-              );
-            })}
+
+                {/* Członkowie w tej grupie */}
+                {group.members.map((member) => {
+                  const status = userStatuses[member.id] || member.status || 'offline';
+                  const roleColor = member.highestRole?.color || (status === 'offline' ? '#747f8d' : '#dcddde');
+
+                  return (
+                    <div
+                      key={member.id}
+                      onContextMenu={(e) => handleUserClickOrContextMenu(e, member)}
+                      onClick={(e) => handleUserClickOrContextMenu(e, member)}
+                      className="flex items-center space-x-2.5 px-2 py-1.5 rounded-lg hover:bg-dark-700/60 cursor-pointer transition-colors group"
+                      title={`${member.displayName || member.username} (Kliknij dla opcji i ról)`}
+                    >
+                      <UserAvatar user={member} size="sm" statusOverride={status} />
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className="text-xs font-semibold truncate transition-colors"
+                          style={{ color: roleColor }}
+                        >
+                          {member.displayName || member.username}
+                        </div>
+                        {member.customStatus ? (
+                          <div className="text-[10px] text-dark-400 truncate">
+                            {member.customStatus}
+                          </div>
+                        ) : member.highestRole && member.highestRole.id !== 'role-everyone' ? (
+                          <div
+                            className="text-[9px] font-bold truncate uppercase tracking-wider"
+                            style={{ color: `${member.highestRole.color}cc` }}
+                          >
+                            {member.highestRole.name}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* MENU KONTEKSTOWE DLA UŻYTKOWNIKA (PPM na profil / członka) */}
+      {/* MENU KONTEKSTOWE DLA UŻYTKOWNIKA (LPM / PPM) */}
       {userContextMenu && (
         <div
           ref={menuRef}
-          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[190px] animate-fade-in text-dark-100"
+          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[210px] animate-fade-in text-dark-100 space-y-0.5"
           style={{
-            top: Math.min(userContextMenu.y, window.innerHeight - 170),
-            left: Math.min(userContextMenu.x, window.innerWidth - 200)
+            top: userContextMenu.y,
+            left: userContextMenu.x
           }}
         >
+          {/* Nagłówek użytkownika */}
           <div className="px-3 py-1.5 border-b border-dark-800 mb-1 flex items-center space-x-2">
             <UserAvatar user={userContextMenu.targetUser} size="sm" />
             <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">
+              <div
+                className="text-xs font-bold truncate"
+                style={{ color: userContextMenu.targetUser.highestRole?.color || '#ffffff' }}
+              >
                 {userContextMenu.targetUser.displayName || userContextMenu.targetUser.username}
               </div>
               <div className="text-[10px] text-dark-400">@{userContextMenu.targetUser.username}</div>
@@ -483,7 +615,51 @@ export const ChatArea = ({
             </>
           )}
 
-          {/* Kopiuj Nick / ID */}
+          {/* ZARZĄDZANIE ROLAMI UŻYTKOWNIKA (Dla Administracji) */}
+          {server && canManageRoles && (
+            <div className="py-1 border-t border-dark-800 my-1">
+              <div className="px-2.5 py-1 text-[10px] font-bold text-dark-400 uppercase tracking-wider flex items-center space-x-1">
+                <Shield size={11} />
+                <span>Nadaj / Odbierz role:</span>
+              </div>
+              <div className="space-y-0.5 max-h-32 overflow-y-auto scrollbar-thin">
+                {(server.roles || [])
+                  .filter(r => r.id !== 'role-everyone' && r.id !== 'role-owner')
+                  .map((role) => {
+                    const memberRoles = server.memberRoles?.[userContextMenu.targetUser.id] || [];
+                    const hasRole = memberRoles.includes(role.id);
+
+                    return (
+                      <button
+                        key={role.id}
+                        type="button"
+                        onClick={() => toggleRoleForMember(userContextMenu.targetUser.id, role.id)}
+                        className="w-full flex items-center justify-between px-2.5 py-1 text-xs text-left hover:bg-dark-700 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: role.color || '#99aab5' }}
+                          />
+                          <span className="truncate text-dark-200" style={{ color: hasRole ? role.color : undefined }}>
+                            {role.name}
+                          </span>
+                        </div>
+                        {hasRole ? (
+                          <CheckSquare size={13} className="text-brand-400" />
+                        ) : (
+                          <Square size={13} className="text-dark-500" />
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          <div className="border-t border-dark-800 my-1" />
+
+          {/* Kopiuj Nick */}
           <button
             onClick={() => {
               copyToClipboard(`@${userContextMenu.targetUser.username}`);
@@ -500,14 +676,14 @@ export const ChatArea = ({
         </div>
       )}
 
-      {/* MENU KONTEKSTOWE DLA WIADOMOŚCI (PPM na treść wiadomości) */}
+      {/* MENU KONTEKSTOWE DLA WIADOMOŚCI */}
       {msgContextMenu && (
         <div
           ref={menuRef}
           className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[170px] animate-fade-in text-dark-100"
           style={{
-            top: Math.min(msgContextMenu.y, window.innerHeight - 100),
-            left: Math.min(msgContextMenu.x, window.innerWidth - 180)
+            top: msgContextMenu.y,
+            left: msgContextMenu.x
           }}
         >
           <button

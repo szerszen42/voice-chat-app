@@ -16,6 +16,7 @@ export const UserAvatar = ({
   className = ''
 }) => {
   const sizeClasses = {
+    xs: 'w-5 h-5 text-[10px]',
     sm: 'w-7 h-7 text-xs',
     md: 'w-10 h-10 text-base',
     lg: 'w-14 h-14 text-2xl',
@@ -23,6 +24,7 @@ export const UserAvatar = ({
   };
 
   const statusSizeClasses = {
+    xs: 'w-2 h-2 bottom-0 right-0 border',
     sm: 'w-2.5 h-2.5 bottom-0 right-0 border',
     md: 'w-3.5 h-3.5 bottom-0 right-0 border-2',
     lg: 'w-4 h-4 bottom-0.5 right-0.5 border-2',
@@ -32,28 +34,32 @@ export const UserAvatar = ({
   const status = statusOverride || user?.status || 'offline';
   const avatarColor = user?.avatarColor || '#5865f2';
   const avatarEmoji = user?.avatarEmoji || '👤';
-  const avatarUrl = user?.avatarUrl;
+  const avatarUrl = user?.avatarUrl || user?.avatar || user?.avatarImage;
   const initial = user?.displayName ? user.displayName.charAt(0).toUpperCase() : (user?.username ? user.username.charAt(0).toUpperCase() : '?');
+
+  const [imgError, setImgError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [avatarUrl]);
 
   return (
     <div className={`relative inline-flex items-center justify-center flex-shrink-0 select-none ${className}`}>
       {/* Obwódka mówienia (Zielony puls) */}
       <div
-        className={`rounded-full flex items-center justify-center font-bold text-white transition-all duration-150 overflow-hidden ${sizeClasses[size]} ${
+        className={`rounded-full flex items-center justify-center font-bold text-white transition-all duration-150 overflow-hidden ${sizeClasses[size] || sizeClasses.md} ${
           isSpeaking
             ? 'ring-4 ring-emerald-500 ring-offset-2 ring-offset-dark-800 animate-pulse-glow'
             : ''
         }`}
         style={{ backgroundColor: avatarColor }}
       >
-        {avatarUrl ? (
+        {avatarUrl && !imgError ? (
           <img
             src={avatarUrl}
             alt={user?.displayName || user?.username || 'Avatar'}
             className="w-full h-full object-cover rounded-full"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
+            onError={() => setImgError(true)}
           />
         ) : avatarEmoji && avatarEmoji !== '👤' ? (
           <span className="leading-none">{avatarEmoji}</span>

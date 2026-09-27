@@ -99,24 +99,36 @@ router.post('/join-invite', authenticateJWT, (req, res) => {
   res.json({ server: updatedServer });
 });
 
-// Pobierz szczegóły pojedynczego serwera (z kanałami i członkami)
+// Pobierz szczegóły pojedynczego serwera (z kanałami, rolami i członkami)
 router.get('/:id', authenticateJWT, (req, res) => {
   const server = db.getServerById(req.params.id);
   if (!server) {
     return res.status(404).json({ error: 'Serwer nie istnieje.' });
   }
 
-  // Pobierz dane użytkowników będących członkami
+  // Pobierz dane użytkowników będących członkami wraz z ich rolami
   const membersData = (server.members || []).map(memberId => {
     const user = db.findUserById(memberId);
     if (!user) return null;
     const { passwordHash: _, ...safe } = user;
-    return safe;
+    const userRoles = db.getMemberRoles(server, memberId);
+    const highestRole = db.getMemberHighestRole(server, memberId);
+
+    return {
+      ...safe,
+      roles: userRoles,
+      highestRole
+    };
   }).filter(Boolean);
+
+  const currentUserPermissions = db.getUserPermissions(server, req.user.id);
+  const roles = db.getServerRoles(server.id);
 
   res.json({
     server: {
       ...server,
+      roles,
+      currentUserPermissions,
       membersList: membersData
     }
   });
@@ -129,8 +141,8 @@ router.post('/:id/channels', authenticateJWT, (req, res) => {
     return res.status(404).json({ error: 'Serwer nie istnieje.' });
   }
 
-  if (server.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Tylko właściciel serwera może tworzyć kanały.' });
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_CHANNELS')) {
+    return res.status(403).json({ error: 'Brak uprawnień do tworzenia kanałów (wymagana ranga z uprawnieniem Zarządzanie kanałami).' });
   }
 
   const { name, type, topic } = req.body;
@@ -160,8 +172,8 @@ router.patch('/:id/channels/:channelId', authenticateJWT, (req, res) => {
     return res.status(404).json({ error: 'Serwer nie istnieje.' });
   }
 
-  if (server.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Tylko właściciel serwera może edytować kanały.' });
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_CHANNELS')) {
+    return res.status(403).json({ error: 'Brak uprawnień do edycji kanałów.' });
   }
 
   const { name, topic } = req.body;
@@ -195,8 +207,8 @@ router.delete('/:id/channels/:channelId', authenticateJWT, (req, res) => {
     return res.status(404).json({ error: 'Serwer nie istnieje.' });
   }
 
-  if (server.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Tylko właściciel serwera może usuwać kanały.' });
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_CHANNELS')) {
+    return res.status(403).json({ error: 'Brak uprawnień do usuwania kanałów.' });
   }
 
   const deleted = db.deleteChannel(server.id, req.params.channelId);
@@ -205,6 +217,87 @@ router.delete('/:id/channels/:channelId', authenticateJWT, (req, res) => {
   }
 
   res.json({ success: true, channelId: req.params.channelId });
+});
+
+// --- ROLE SERWERA ---
+// Pobierz role serwera
+router.get('/:id/roles', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+  const roles = db.getServerRoles(server.id);
+  res.json({ roles });
+});
+
+// Utwórz nową rolę na serwerze
+router.post('/:id/roles', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_ROLES')) {
+    return res.status(403).json({ error: 'Brak uprawnień do zarządzania rolami.' });
+  }
+
+  const newRole = db.addServerRole(server.id, req.body);
+  res.status(201).json({ role: newRole });
+});
+
+// Edytuj rolę na serwerze
+router.patch('/:id/roles/:roleId', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_ROLES')) {
+    return res.status(403).json({ error: 'Brak uprawnień do zarządzania rolami.' });
+  }
+
+  const updatedRole = db.updateServerRole(server.id, req.params.roleId, req.body);
+  if (!updatedRole) {
+    return res.status(404).json({ error: 'Nie znaleziono roli.' });
+  }
+
+  res.json({ role: updatedRole });
+});
+
+// Usuń rolę z serwera
+router.delete('/:id/roles/:roleId', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_ROLES')) {
+    return res.status(403).json({ error: 'Brak uprawnień do zarządzania rolami.' });
+  }
+
+  const deleted = db.deleteServerRole(server.id, req.params.roleId);
+  if (!deleted) {
+    return res.status(400).json({ error: 'Nie można usunąć tej roli (jest to rola systemowa lub nie istnieje).' });
+  }
+
+  res.json({ success: true, roleId: req.params.roleId });
+});
+
+// Przypisz role do członka serwera
+router.patch('/:id/members/:memberId/roles', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_ROLES')) {
+    return res.status(403).json({ error: 'Brak uprawnień do nadawania ról.' });
+  }
+
+  const { roleIds } = req.body;
+  const updatedRoleIds = db.setMemberRoles(server.id, req.params.memberId, roleIds);
+
+  res.json({ success: true, memberId: req.params.memberId, roleIds: updatedRoleIds });
 });
 
 // Pobierz historię wiadomości na kanale
@@ -220,6 +313,7 @@ router.get('/channels/:channelId/messages', authenticateJWT, (req, res) => {
         id: user.id,
         username: user.username,
         displayName: user.displayName,
+        avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
         avatarColor: user.avatarColor,
         avatarEmoji: user.avatarEmoji,
         status: user.status
@@ -227,6 +321,7 @@ router.get('/channels/:channelId/messages', authenticateJWT, (req, res) => {
         id: msg.userId,
         username: 'Nieznany',
         displayName: 'Nieznany',
+        avatarUrl: null,
         avatarColor: '#80848e',
         avatarEmoji: '❓',
         status: 'offline'
@@ -237,15 +332,15 @@ router.get('/channels/:channelId/messages', authenticateJWT, (req, res) => {
   res.json({ messages: enrichedMessages });
 });
 
-// Edytuj dane serwera (tylko właściciel)
+// Edytuj dane serwera (właściciel lub MANAGE_SERVER)
 router.patch('/:id', authenticateJWT, (req, res) => {
   const server = db.getServerById(req.params.id);
   if (!server) {
     return res.status(404).json({ error: 'Serwer nie istnieje.' });
   }
 
-  if (server.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Tylko właściciel może edytować ustawienia serwera.' });
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_SERVER')) {
+    return res.status(403).json({ error: 'Brak uprawnień do edycji ustawień serwera.' });
   }
 
   const { name, description, icon, color, isPublic } = req.body;

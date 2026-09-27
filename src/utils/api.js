@@ -57,6 +57,13 @@ export const api = {
   deleteChannel: (serverId, channelId) => request(`/servers/${serverId}/channels/${channelId}`, { method: 'DELETE' }),
   getChannelMessages: (channelId) => request(`/servers/channels/${channelId}/messages`),
 
+  // Server Roles
+  getServerRoles: (serverId) => request(`/servers/${serverId}/roles`),
+  createServerRole: (serverId, roleData) => request(`/servers/${serverId}/roles`, { method: 'POST', body: JSON.stringify(roleData) }),
+  updateServerRole: (serverId, roleId, updates) => request(`/servers/${serverId}/roles/${roleId}`, { method: 'PATCH', body: JSON.stringify(updates) }),
+  deleteServerRole: (serverId, roleId) => request(`/servers/${serverId}/roles/${roleId}`, { method: 'DELETE' }),
+  setMemberRoles: (serverId, memberId, roleIds) => request(`/servers/${serverId}/members/${memberId}/roles`, { method: 'PATCH', body: JSON.stringify({ roleIds }) }),
+
   // Direct Messages
   getConversations: () => request('/dm/conversations'),
   getDirectMessages: (recipientId) => request(`/dm/${recipientId}`)

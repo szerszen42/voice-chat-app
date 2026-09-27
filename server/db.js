@@ -1,6 +1,8 @@
+import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { MongoClient } from 'mongodb';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +25,10 @@ const defaultInitialData = {
 class JSONDatabase {
   constructor() {
     this.data = this.load();
+    this.mongoClient = null;
+    this.mongoDb = null;
+    this.mongoCollection = null;
+    this.initMongo();
   }
 
   load() {
@@ -47,8 +53,61 @@ class JSONDatabase {
     }
   }
 
+  async initMongo() {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      console.log('ℹ️ Brak MONGODB_URI – używam lokalnego pliku bazy danych (db.json)');
+      return;
+    }
+
+    try {
+      console.log('🔄 Łączenie z chmurową bazą danych MongoDB Atlas...');
+      this.mongoClient = new MongoClient(uri, {
+        serverSelectionTimeoutMS: 8000
+      });
+      await this.mongoClient.connect();
+      this.mongoDb = this.mongoClient.db('voicechat');
+      this.mongoCollection = this.mongoDb.collection('app_state');
+
+      // Wczytaj dane z chmury
+      const remoteData = await this.mongoCollection.findOne({ _id: 'main_state' });
+      if (remoteData && Array.isArray(remoteData.users) && remoteData.users.length > 0) {
+        console.log(`✅ Połączono z MongoDB Atlas! Załadowano ${remoteData.users.length} użytkowników i ${remoteData.servers?.length || 0} serwerów.`);
+        this.data = {
+          users: remoteData.users || [],
+          servers: remoteData.servers || [],
+          messages: remoteData.messages || [],
+          directMessages: remoteData.directMessages || [],
+          friendships: remoteData.friendships || []
+        };
+        this.saveData(this.data);
+      } else {
+        console.log('ℹ️ Baza MongoDB jest nowa. Zapisuję stan początkowy do chmury...');
+        await this.mongoCollection.updateOne(
+          { _id: 'main_state' },
+          { $set: this.data },
+          { upsert: true }
+        );
+      }
+    } catch (err) {
+      console.error('⚠️ Błąd połączenia z MongoDB Atlas (używam pliku db.json):', err.message);
+    }
+  }
+
   save() {
+    // 1. Zapis lokalny
     this.saveData(this.data);
+
+    // 2. Zapis w chmurze MongoDB jeśli podłączone
+    if (this.mongoCollection) {
+      this.mongoCollection.updateOne(
+        { _id: 'main_state' },
+        { $set: this.data },
+        { upsert: true }
+      ).catch(err => {
+        console.error('⚠️ Błąd zapisu do MongoDB Atlas:', err.message);
+      });
+    }
   }
 
   // --- Użytkownicy ---
@@ -83,23 +142,131 @@ class JSONDatabase {
   }
 
   // --- Serwery ---
+  ensureServerRoles(server) {
+    if (!server) return;
+    let changed = false;
+    if (!server.roles || !Array.isArray(server.roles) || server.roles.length === 0) {
+      server.roles = [
+        {
+          id: 'role-owner',
+          name: '👑 Właściciel',
+          color: '#f1c40f',
+          hoist: true,
+          position: 100,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-admin',
+          name: '🛡️ Administrator',
+          color: '#ed4245',
+          hoist: true,
+          position: 50,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-mod',
+          name: '⭐ Moderator',
+          color: '#2ecc71',
+          hoist: true,
+          position: 30,
+          permissions: ['MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-everyone',
+          name: '@everyone',
+          color: '#95a5a6',
+          hoist: false,
+          position: 0,
+          permissions: ['SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        }
+      ];
+      changed = true;
+    }
+
+    if (!server.memberRoles || typeof server.memberRoles !== 'object') {
+      server.memberRoles = {};
+      changed = true;
+    }
+
+    if (server.ownerId) {
+      if (!server.memberRoles[server.ownerId]) {
+        server.memberRoles[server.ownerId] = ['role-owner'];
+        changed = true;
+      } else if (!server.memberRoles[server.ownerId].includes('role-owner')) {
+        server.memberRoles[server.ownerId].unshift('role-owner');
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.save();
+    }
+  }
+
   getAllServers() {
+    this.data.servers.forEach(s => this.ensureServerRoles(s));
     return this.data.servers;
   }
 
   getPublicServers() {
+    this.data.servers.forEach(s => this.ensureServerRoles(s));
     return this.data.servers.filter(s => s.isPublic);
   }
 
   getServerById(id) {
-    return this.data.servers.find(s => s.id === id);
+    const server = this.data.servers.find(s => s.id === id);
+    if (server) this.ensureServerRoles(server);
+    return server;
   }
 
   getServerByInviteCode(code) {
-    return this.data.servers.find(s => s.inviteCode.toUpperCase() === code.trim().toUpperCase());
+    const server = this.data.servers.find(s => s.inviteCode && s.inviteCode.toUpperCase() === code.trim().toUpperCase());
+    if (server) this.ensureServerRoles(server);
+    return server;
   }
 
   createServer(server) {
+    if (!server.roles || !Array.isArray(server.roles)) {
+      server.roles = [
+        {
+          id: 'role-owner',
+          name: '👑 Właściciel',
+          color: '#f1c40f',
+          hoist: true,
+          position: 100,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-admin',
+          name: '🛡️ Administrator',
+          color: '#ed4245',
+          hoist: true,
+          position: 50,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-mod',
+          name: '⭐ Moderator',
+          color: '#2ecc71',
+          hoist: true,
+          position: 30,
+          permissions: ['MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        },
+        {
+          id: 'role-everyone',
+          name: '@everyone',
+          color: '#95a5a6',
+          hoist: false,
+          position: 0,
+          permissions: ['SEND_MESSAGES', 'CONNECT', 'SPEAK']
+        }
+      ];
+    }
+    if (!server.memberRoles) {
+      server.memberRoles = {
+        [server.ownerId]: ['role-owner']
+      };
+    }
     this.data.servers.push(server);
     this.save();
     return server;
@@ -127,8 +294,13 @@ class JSONDatabase {
 
   addServerMember(serverId, userId) {
     const server = this.getServerById(serverId);
-    if (server && !server.members.includes(userId)) {
-      server.members.push(userId);
+    if (server) {
+      if (!server.members.includes(userId)) {
+        server.members.push(userId);
+      }
+      if (!server.memberRoles[userId]) {
+        server.memberRoles[userId] = ['role-everyone'];
+      }
       this.save();
     }
     return server;
@@ -138,9 +310,177 @@ class JSONDatabase {
     const server = this.getServerById(serverId);
     if (server) {
       server.members = server.members.filter(id => id !== userId);
+      if (server.memberRoles && server.memberRoles[userId]) {
+        delete server.memberRoles[userId];
+      }
       this.save();
     }
     return server;
+  }
+
+  // --- ZARZĄDZANIE ROLAMI I UPRAWNIENIAMI SERWERA ---
+  getServerRoles(serverId) {
+    const server = this.getServerById(serverId);
+    if (!server) return [];
+    return (server.roles || []).sort((a, b) => (b.position || 0) - (a.position || 0));
+  }
+
+  addServerRole(serverId, roleData) {
+    const server = this.getServerById(serverId);
+    if (!server) return null;
+
+    const maxPosition = (server.roles || []).reduce((max, r) => Math.max(max, r.position || 0), 0);
+    const newRole = {
+      id: `role-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: roleData.name ? roleData.name.trim() : 'Nowa rola',
+      color: roleData.color || '#99aab5',
+      hoist: Boolean(roleData.hoist),
+      position: roleData.position !== undefined ? roleData.position : Math.max(1, maxPosition),
+      permissions: Array.isArray(roleData.permissions) ? roleData.permissions : ['SEND_MESSAGES', 'CONNECT', 'SPEAK']
+    };
+
+    server.roles.push(newRole);
+    this.save();
+    return newRole;
+  }
+
+  updateServerRole(serverId, roleId, updates) {
+    const server = this.getServerById(serverId);
+    if (!server) return null;
+
+    const role = (server.roles || []).find(r => r.id === roleId);
+    if (!role) return null;
+
+    if (updates.name !== undefined && updates.name.trim()) role.name = updates.name.trim();
+    if (updates.color !== undefined) role.color = updates.color;
+    if (updates.hoist !== undefined) role.hoist = Boolean(updates.hoist);
+    if (updates.position !== undefined) role.position = Number(updates.position);
+    if (Array.isArray(updates.permissions)) role.permissions = updates.permissions;
+
+    this.save();
+    return role;
+  }
+
+  deleteServerRole(serverId, roleId) {
+    const server = this.getServerById(serverId);
+    if (!server) return false;
+
+    // Nie usuwaj ról systemowych
+    if (roleId === 'role-owner' || roleId === 'role-everyone') {
+      return false;
+    }
+
+    const index = (server.roles || []).findIndex(r => r.id === roleId);
+    if (index === -1) return false;
+
+    server.roles.splice(index, 1);
+
+    // Usuń tę rolę ze wszystkich członków
+    if (server.memberRoles) {
+      Object.keys(server.memberRoles).forEach(memberId => {
+        if (Array.isArray(server.memberRoles[memberId])) {
+          server.memberRoles[memberId] = server.memberRoles[memberId].filter(id => id !== roleId);
+        }
+      });
+    }
+
+    this.save();
+    return true;
+  }
+
+  setMemberRoles(serverId, memberId, roleIds) {
+    const server = this.getServerById(serverId);
+    if (!server) return null;
+
+    if (!server.memberRoles) server.memberRoles = {};
+    
+    // Upewnij się, że właściciel ma role-owner
+    let finalRoleIds = Array.isArray(roleIds) ? [...roleIds] : [];
+    if (server.ownerId === memberId && !finalRoleIds.includes('role-owner')) {
+      finalRoleIds.unshift('role-owner');
+    }
+
+    server.memberRoles[memberId] = finalRoleIds;
+    this.save();
+    return finalRoleIds;
+  }
+
+  getMemberRoles(server, userId) {
+    if (!server) return [];
+    this.ensureServerRoles(server);
+
+    const assignedRoleIds = (server.memberRoles && server.memberRoles[userId]) || [];
+    const rolesList = [];
+
+    // Jeśli właściciel
+    if (server.ownerId === userId) {
+      const ownerRole = server.roles.find(r => r.id === 'role-owner') || {
+        id: 'role-owner',
+        name: '👑 Właściciel',
+        color: '#f1c40f',
+        hoist: true,
+        position: 100,
+        permissions: ['ADMINISTRATOR']
+      };
+      if (!rolesList.some(r => r.id === 'role-owner')) {
+        rolesList.push(ownerRole);
+      }
+    }
+
+    // Dodaj przypisane role
+    assignedRoleIds.forEach(roleId => {
+      const found = server.roles.find(r => r.id === roleId);
+      if (found && !rolesList.some(r => r.id === found.id)) {
+        rolesList.push(found);
+      }
+    });
+
+    // Zawsze dołącz @everyone
+    const everyoneRole = server.roles.find(r => r.id === 'role-everyone');
+    if (everyoneRole && !rolesList.some(r => r.id === 'role-everyone')) {
+      rolesList.push(everyoneRole);
+    }
+
+    return rolesList.sort((a, b) => (b.position || 0) - (a.position || 0));
+  }
+
+  getMemberHighestRole(server, userId) {
+    const roles = this.getMemberRoles(server, userId);
+    // Preferuj role z hoist = true, a jeśli brak, najwyższą po pozycji
+    const hoisted = roles.filter(r => r.hoist && r.id !== 'role-everyone');
+    if (hoisted.length > 0) {
+      return hoisted[0];
+    }
+    return roles.length > 0 ? roles[0] : null;
+  }
+
+  getUserPermissions(server, userId) {
+    if (!server) return [];
+    if (server.ownerId === userId) {
+      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
+    }
+
+    const roles = this.getMemberRoles(server, userId);
+    const permissionsSet = new Set();
+
+    for (const role of roles) {
+      if (Array.isArray(role.permissions)) {
+        role.permissions.forEach(p => permissionsSet.add(p));
+      }
+    }
+
+    if (permissionsSet.has('ADMINISTRATOR')) {
+      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
+    }
+
+    return Array.from(permissionsSet);
+  }
+
+  hasServerPermission(server, userId, permission) {
+    if (!server || !userId) return false;
+    if (server.ownerId === userId) return true;
+    const permissions = this.getUserPermissions(server, userId);
+    return permissions.includes('ADMINISTRATOR') || permissions.includes(permission);
   }
 
   addChannel(serverId, channel) {
