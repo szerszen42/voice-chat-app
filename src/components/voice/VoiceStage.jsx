@@ -18,7 +18,7 @@ import { UserAvatar } from '../common/UserAvatar';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 
-export const VoiceStage = ({ onOpenUserProfile }) => {
+export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
   const { user } = useAuth();
   const {
     activeVoiceChannel,
@@ -33,7 +33,9 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
     localScreenStream,
     remoteScreenStreams = new Map(), // socketId -> { user, stream }
     startScreenShare,
-    stopScreenShare
+    stopScreenShare,
+    hasMicPermission,
+    requestMicPermission
   } = useVoice();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -89,7 +91,28 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
     }
   }, [activeStream?.stream]);
 
-  if (!activeVoiceChannel) return null;
+  // Zabezpieczenie przed czarnym ekranem po rozłączeniu się z głosu
+  if (!activeVoiceChannel) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-dark-900 text-dark-300 select-none">
+        <div className="w-16 h-16 rounded-3xl bg-dark-800 border border-dark-700 flex items-center justify-center mb-4 text-emerald-400 shadow-xl">
+          <Radio size={32} className="animate-pulse" />
+        </div>
+        <h3 className="text-base font-bold text-white mb-1">Rozłączono z kanałem głosowym</h3>
+        <p className="text-xs text-dark-400 mb-5 max-w-xs leading-relaxed">
+          Opuściłeś pokój rozmów. Możesz wrócić do czatu tekstowego lub wybrać inny kanał na serwerze.
+        </p>
+        <button
+          onClick={() => {
+            if (onSelectDefaultChannel) onSelectDefaultChannel();
+          }}
+          className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-brand-500/25 transition-all cursor-pointer"
+        >
+          Przejdź do czatu tekstowego
+        </button>
+      </div>
+    );
+  }
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -184,6 +207,37 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
           </button>
         </div>
       </div>
+
+      {/* BANER BRAKU UPRAWNIEŃ DO MIKROFONU NA TELEFONIE / PRZEGLĄDARCE */}
+      {!hasMicPermission && (
+        <div className="mx-3 mt-3 p-3 bg-gradient-to-r from-amber-600/30 to-red-600/30 border border-amber-500/50 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-lg animate-fade-in z-20">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl flex-shrink-0">
+              <MicOff size={20} />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center space-x-1.5">
+                <span>Dostęp do mikrofonu i dźwięku jest wyłączony</span>
+              </div>
+              <div className="text-[11px] text-amber-200/90 leading-tight">
+                Aby rozmawiać i słyszeć innych na telefonie, zezwól przeglądarce na dostęp do mikrofonu i dźwięku.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              const ok = await requestMicPermission();
+              if (!ok) {
+                alert('Przeglądarka zablokowała mikrofon. Sprawdź uprawnienia w pasku adresu (ikonka kłódki/suwaków) i wybierz "Zezwalaj na mikrofon".');
+              }
+            }}
+            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-95 text-dark-950 font-bold text-xs rounded-xl transition-all shadow-md flex-shrink-0 flex items-center justify-center space-x-1.5 cursor-pointer"
+          >
+            <Mic size={15} />
+            <span>Zezwól na mikrofon i dźwięk</span>
+          </button>
+        </div>
+      )}
 
       {/* GŁÓWNA OBSZAR: STREAM EKRANU LUB SIATKA UCZESTNIKÓW */}
       <div className="flex-1 flex flex-col p-3 sm:p-4 overflow-hidden relative">

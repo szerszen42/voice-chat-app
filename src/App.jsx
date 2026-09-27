@@ -29,12 +29,13 @@ import { InstallPwaModal } from './components/modals/InstallPwaModal';
 import { FriendsView } from './components/friends/FriendsView';
 import { VoiceStage } from './components/voice/VoiceStage';
 import { UserProfileModal } from './components/modals/UserProfileModal';
+import { MicPermissionModal } from './components/modals/MicPermissionModal';
 import { useVoice } from './context/VoiceContext';
 
 export const App = () => {
   const { user, loading: authLoading } = useAuth();
   const { socket } = useSocket();
-  const { startDirectCall } = useVoice();
+  const { startDirectCall, activeVoiceChannel, hasMicPermission, requestMicPermission } = useVoice();
 
   // Widok główny: 'dm' lub 'server'
   const [activeView, setActiveView] = useState('server');
@@ -70,6 +71,7 @@ export const App = () => {
   const [editingChannel, setEditingChannel] = useState(null);
   const [editingServer, setEditingServer] = useState(null);
   const [isInstallPwaOpen, setIsInstallPwaOpen] = useState(false);
+  const [isMicModalOpen, setIsMicModalOpen] = useState(false);
   const [selectedProfileUserId, setSelectedProfileUserId] = useState(null);
 
   const handleOpenUserProfile = (target) => {
@@ -78,6 +80,19 @@ export const App = () => {
       setSelectedProfileUserId(targetId);
     }
   };
+
+  // Automatyczne przywracanie widoku tekstowego po opuszczeniu kanału głosowego (zapobiega czarnemu ekranowi)
+  useEffect(() => {
+    if (activeView === 'server' && activeChannel?.type === 'voice' && !activeVoiceChannel) {
+      const defaultTextCh = (activeServer?.channels || []).find(c => c.type === 'text') || (activeServer?.channels || [])[0];
+      if (defaultTextCh) {
+        selectChannel(defaultTextCh);
+      } else {
+        setActiveChannel(null);
+        setMessages([]);
+      }
+    }
+  }, [activeVoiceChannel, activeChannel, activeView, activeServer]);
 
   // Wczytaj serwery, użytkowników i znajomych po zalogowaniu
   useEffect(() => {
@@ -538,7 +553,13 @@ export const App = () => {
             onOpenUserProfile={handleOpenUserProfile}
           />
         ) : activeView === 'server' && activeChannel?.type === 'voice' ? (
-          <VoiceStage onOpenUserProfile={handleOpenUserProfile} />
+          <VoiceStage
+            onOpenUserProfile={handleOpenUserProfile}
+            onSelectDefaultChannel={() => {
+              const defaultTextCh = (activeServer?.channels || []).find(c => c.type === 'text') || (activeServer?.channels || [])[0];
+              if (defaultTextCh) selectChannel(defaultTextCh);
+            }}
+          />
         ) : (
           <ChatArea
             server={activeServer}
@@ -699,6 +720,11 @@ export const App = () => {
       <InstallPwaModal
         isOpen={isInstallPwaOpen}
         onClose={() => setIsInstallPwaOpen(false)}
+      />
+
+      <MicPermissionModal
+        isOpen={isMicModalOpen}
+        onClose={() => setIsMicModalOpen(false)}
       />
     </div>
   );

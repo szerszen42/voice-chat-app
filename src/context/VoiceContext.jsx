@@ -236,6 +236,71 @@ export const VoiceProvider = ({ children }) => {
     }
   };
 
+  // Jawne żądanie uprawnień do mikrofonu i odblokowanie AudioContext na telefonach
+  const requestMicPermission = async () => {
+    try {
+      // 1. Odblokuj Web Audio AudioContext (Safari iOS / Chrome Android)
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new AudioCtx();
+        }
+        if (audioCtxRef.current.state === 'suspended') {
+          await audioCtxRef.current.resume().catch(() => {});
+        }
+        try {
+          const osc = audioCtxRef.current.createOscillator();
+          const gain = audioCtxRef.current.createGain();
+          gain.gain.value = 0.001;
+          osc.connect(gain);
+          gain.connect(audioCtxRef.current.destination);
+          osc.start();
+          osc.stop(audioCtxRef.current.currentTime + 0.05);
+        } catch (e) {}
+      }
+
+      // 2. Poproś o dostęp do mikrofonu w bezpośrednim kontekście kliknięcia
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: echoCancellationRef.current,
+          noiseSuppression: noiseSuppressionRef.current,
+          autoGainControl: autoGainControlRef.current
+        },
+        video: false
+      });
+
+      localStreamRef.current = stream;
+      setHasMicPermission(true);
+      setupAudioAnalyser(stream);
+      await refreshAudioDevices(false).catch(() => {});
+
+      // 3. Podepnij ścieżkę audio do aktywnych połączeń WebRTC jeśli jesteśmy w pokoju
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        peerConnectionsRef.current.forEach((pc) => {
+          const senders = pc.getSenders();
+          const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+          if (audioSender) {
+            audioSender.replaceTrack(audioTrack).catch(() => {});
+          } else {
+            pc.addTrack(audioTrack, stream);
+          }
+        });
+      }
+
+      // 4. Wymuś odtworzenie zdalnych strumieni audio
+      audioElementsRef.current.forEach((audio) => {
+        audio.play().catch(() => {});
+      });
+
+      return true;
+    } catch (err) {
+      console.warn('Błąd przyznawania uprawnień mikrofonu:', err);
+      setHasMicPermission(false);
+      return false;
+    }
+  };
+
   // Zmiana ustawień przetwarzania dźwięku (tłumienie hałasu, echo, wzmocnienie, czułość bramki)
   const updateAudioProcessingSettings = async (settings) => {
     let shouldUpdateHardware = false;
@@ -683,6 +748,8 @@ export const VoiceProvider = ({ children }) => {
           audio = new Audio();
           audio.autoplay = true;
           audio.playsInline = true;
+          audio.style.display = 'none';
+          document.body.appendChild(audio);
           audioElementsRef.current.set(targetSocketId, audio);
         }
         audio.srcObject = event.streams[0];
@@ -841,7 +908,9 @@ export const VoiceProvider = ({ children }) => {
     audioElementsRef.current.forEach((audio) => {
       audio.pause();
       audio.srcObject = null;
-      audio.remove();
+      if (audio.parentNode) {
+        audio.parentNode.removeChild(audio);
+      }
     });
     audioElementsRef.current.clear();
     setRemoteScreenStreams(new Map());
@@ -1001,6 +1070,8 @@ export const VoiceProvider = ({ children }) => {
           directAudioRef.current = new Audio();
           directAudioRef.current.autoplay = true;
           directAudioRef.current.playsInline = true;
+          directAudioRef.current.style.display = 'none';
+          document.body.appendChild(directAudioRef.current);
         }
         directAudioRef.current.srcObject = event.streams[0];
         directAudioRef.current.muted = isDeafened;
@@ -1052,6 +1123,9 @@ export const VoiceProvider = ({ children }) => {
     if (directAudioRef.current) {
       directAudioRef.current.pause();
       directAudioRef.current.srcObject = null;
+      if (directAudioRef.current.parentNode) {
+        directAudioRef.current.parentNode.removeChild(directAudioRef.current);
+      }
     }
 
     setDirectRemoteScreenStream(null);
@@ -1416,6 +1490,7 @@ export const VoiceProvider = ({ children }) => {
       selectedAudioInput,
       selectedAudioOutput,
       hasMicPermission,
+      requestMicPermission,
       getLocalAudioStream,
       changeAudioInputDevice,
       changeAudioOutputDevice,
