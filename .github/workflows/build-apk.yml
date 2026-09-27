@@ -26,6 +26,11 @@ jobs:
           npm install --legacy-peer-deps
           npm install @capacitor/core@^6.2.0 @capacitor/cli@^6.2.0 @capacitor/android@^6.2.0 --save
 
+      - name: Apply Mobile Responsive and Layout Fixes
+        run: |
+          # Ukryj prawą listę członków na ekranach telefonów (żeby nie zajmowała połowy ekranu)
+          sed -i 's/<div className="w-56 bg-dark-800/<div className="hidden md:flex w-56 bg-dark-800/' src/components/chat/ChatArea.jsx || true
+
       - name: Build React Frontend
         run: npm run build
 
@@ -62,7 +67,34 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Inject Android Native Mic Permissions & BridgeWebChromeClient
+      - name: Inject Android FitsSystemWindows & Colors into Styles
+        run: |
+          cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">@color/colorPrimary</item>
+                  <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+                  <item name="colorAccent">@color/colorAccent</item>
+              </style>
+
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:fitsSystemWindows">true</item>
+                  <item name="android:statusBarColor">#1e1f22</item>
+                  <item name="android:navigationBarColor">#1e1f22</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:background">#1e1f22</item>
+              </style>
+
+              <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+                  <item name="android:background">@drawable/splash</item>
+              </style>
+          </resources>
+          EOF
+
+      - name: Inject Android Native Mic Permissions & System Bars Insets
         run: |
           mkdir -p android/app/src/main/java/com/voicechat/app
           cat << 'EOF' > android/app/src/main/java/com/voicechat/app/MainActivity.java
@@ -70,12 +102,16 @@ jobs:
 
           import android.Manifest;
           import android.content.pm.PackageManager;
+          import android.graphics.Color;
           import android.os.Build;
           import android.os.Bundle;
+          import android.view.Window;
+          import android.view.WindowManager;
           import android.webkit.PermissionRequest;
           import android.webkit.WebView;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
+          import androidx.core.view.WindowCompat;
           import com.getcapacitor.BridgeActivity;
           import com.getcapacitor.BridgeWebChromeClient;
           import java.util.ArrayList;
@@ -87,6 +123,17 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+
+                  Window window = getWindow();
+                  if (window != null) {
+                      WindowCompat.setDecorFitsSystemWindows(window, true);
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                          window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                          window.setStatusBarColor(Color.parseColor("#1e1f22"));
+                          window.setNavigationBarColor(Color.parseColor("#1e1f22"));
+                      }
+                  }
+
                   requestAppPermissions();
 
                   try {
