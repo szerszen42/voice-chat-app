@@ -137,8 +137,8 @@ export const ServerSidebar = ({
         </div>
       </div>
 
-      {/* Przycisk Wyloguj na dole */}
-      <div className="pt-2">
+      {/* Przycisk Wyloguj na dole (Podniesiony na telefonach) */}
+      <div className="pt-2 pb-7 sm:pb-3">
         <button
           onClick={logout}
           className="w-12 h-12 rounded-[24px] hover:rounded-[16px] bg-dark-700 hover:bg-red-500 text-dark-400 hover:text-white flex items-center justify-center transition-all duration-200"

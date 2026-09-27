@@ -102,7 +102,7 @@ export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
   ];
 
   return (
-    <div className="bg-dark-900 px-3 py-2 flex flex-col border-t border-dark-950/40 relative">
+    <div className="bg-dark-900 px-3 pt-2 pb-7 sm:pb-2.5 flex flex-col border-t border-dark-950/40 relative">
       {/* Pasek aktywnego kanału głosowego (jeśli połączono) */}
       {activeVoiceChannel && (
         <div className="mb-2 px-2.5 py-1.5 bg-dark-800 rounded-lg flex items-center justify-between border border-emerald-500/30">
@@ -140,7 +140,7 @@ export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
       {showProfileMenu && (
         <div
           ref={profileMenuRef}
-          className="absolute bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
+          className="absolute bottom-20 sm:bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
         >
           <div className="px-2 py-1 text-[11px] font-bold text-dark-400 uppercase tracking-wider">
             Zmień status
@@ -209,7 +209,7 @@ export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
       {showMicMenu && (
         <div
           ref={micMenuRef}
-          className="absolute bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
+          className="absolute bottom-20 sm:bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
         >
           <div className="px-2 py-1 text-[11px] font-bold text-dark-400 uppercase tracking-wider flex items-center justify-between">
             <span className="flex items-center space-x-1.5 text-brand-400">
@@ -275,7 +275,7 @@ export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
       {showOutputMenu && (
         <div
           ref={outputMenuRef}
-          className="absolute bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
+          className="absolute bottom-20 sm:bottom-14 left-2 right-2 bg-dark-800 border border-dark-600 rounded-xl shadow-2xl p-2 z-50 text-dark-100 animate-fade-in"
         >
           <div className="px-2 py-1 text-[11px] font-bold text-dark-400 uppercase tracking-wider flex items-center justify-between">
             <span className="flex items-center space-x-1.5 text-emerald-400">

@@ -738,11 +738,11 @@ export const ChatArea = ({
           )}
 
           {/* POLE WPROWADZANIA WIADOMOŚCI */}
-          <div className="px-4 pb-4 select-none relative">
+          <div className="px-3 sm:px-4 pb-7 sm:pb-4 select-none relative">
             
             {/* Popup wyboru Emoji */}
             {showEmojiPicker && (
-              <div className="absolute bottom-16 right-16 bg-dark-800 border border-dark-600 rounded-xl p-3 shadow-2xl z-30 grid grid-cols-5 gap-2 animate-fade-in">
+              <div className="absolute bottom-20 sm:bottom-16 right-4 sm:right-16 bg-dark-800 border border-dark-600 rounded-xl p-3 shadow-2xl z-30 grid grid-cols-5 gap-2 animate-fade-in">
                 {popularEmojis.map((emoji) => (
                   <button
                     key={emoji}
@@ -757,7 +757,7 @@ export const ChatArea = ({
 
             {/* Popup wyboru GIFów */}
             {showGifPicker && (
-              <div className="absolute bottom-16 right-4 sm:right-24 bg-dark-850 border border-dark-600 rounded-2xl p-3 shadow-2xl z-30 w-80 max-w-[90vw] animate-fade-in">
+              <div className="absolute bottom-20 sm:bottom-16 right-2 sm:right-24 bg-dark-850 border border-dark-600 rounded-2xl p-3 shadow-2xl z-30 w-80 max-w-[90vw] animate-fade-in">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-700">
                   <div className="text-xs font-bold text-white flex items-center space-x-1.5">
                     <Sparkles size={14} className="text-brand-400" />

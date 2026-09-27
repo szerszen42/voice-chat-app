@@ -332,50 +332,50 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
         )}
       </div>
 
-      {/* DOLNY PASEK KONTROLEK AUDIO DLA KANAŁU */}
-      <div className="h-14 px-4 bg-dark-900 border-t border-dark-950/60 flex items-center justify-center space-x-3 z-10">
+      {/* DOLNY PASEK KONTROLEK AUDIO DLA KANAŁU (Podniesiony na telefonach dla wygody) */}
+      <div className="min-h-[76px] sm:min-h-[60px] px-4 pt-2 pb-7 sm:pb-3 bg-dark-900 border-t border-dark-950/60 flex items-center justify-center space-x-4 z-10">
         <button
           onClick={toggleMute}
-          className={`p-2.5 rounded-full transition-all active:scale-95 shadow ${
+          className={`p-3 sm:p-2.5 rounded-full transition-all active:scale-95 shadow ${
             isMuted
               ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-1 ring-red-500/40'
               : 'bg-dark-800 text-white hover:bg-dark-700'
           }`}
           title={isMuted ? 'Włącz mikrofon' : 'Wycisz mikrofon'}
         >
-          {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+          {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
         </button>
 
         <button
           onClick={toggleDeafen}
-          className={`p-2.5 rounded-full transition-all active:scale-95 shadow ${
+          className={`p-3 sm:p-2.5 rounded-full transition-all active:scale-95 shadow ${
             isDeafened
               ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-1 ring-red-500/40'
               : 'bg-dark-800 text-white hover:bg-dark-700'
           }`}
           title={isDeafened ? 'Włącz dźwięk' : 'Wyłącz dźwięk'}
         >
-          <Headphones size={18} />
+          <Headphones size={20} />
         </button>
 
         <button
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-          className={`p-2.5 rounded-full transition-all active:scale-95 shadow ${
+          className={`p-3 sm:p-2.5 rounded-full transition-all active:scale-95 shadow ${
             isScreenSharing
               ? 'bg-red-600 text-white hover:bg-red-500 ring-2 ring-red-500/50 animate-pulse'
               : 'bg-dark-800 text-white hover:bg-dark-700'
           }`}
           title={isScreenSharing ? 'Zatrzymaj udostępnianie ekranu' : 'Udostępnij ekran'}
         >
-          {isScreenSharing ? <MonitorOff size={18} /> : <MonitorUp size={18} />}
+          {isScreenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />}
         </button>
 
         <button
           onClick={() => leaveVoiceChannel(true)}
-          className="p-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all hover:scale-105 active:scale-95"
+          className="p-3 sm:p-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all hover:scale-105 active:scale-95"
           title="Rozłącz się"
         >
-          <PhoneOff size={18} />
+          <PhoneOff size={20} />
         </button>
       </div>
     </div>

@@ -24,8 +24,15 @@
     background: #1e1f22;
     border-radius: 4px;
   }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #111214;
+  /* Safe Area / Mobile insets */
+  .pb-safe {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.25rem));
+  }
+  .pb-safe-sm {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0.75rem));
+  }
+  .mb-safe {
+    margin-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.25rem));
   }
 }
 
