@@ -124,7 +124,7 @@ export const AuthModal = () => {
                     type="text"
                     value={loginInput}
                     onChange={(e) => setLoginInput(e.target.value)}
-                    placeholder="np. piotrek@example.com lub Piotrek"
+                    placeholder="Wpisz email lub nazwę użytkownika..."
                     className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2.5 pl-9 text-sm text-white placeholder-dark-500 focus:outline-none focus:border-brand-500"
                     required
                   />
@@ -161,7 +161,7 @@ export const AuthModal = () => {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="np. Michal_Gamer"
+                    placeholder="Wpisz login..."
                     className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 pl-9 text-sm text-white placeholder-dark-500 focus:outline-none focus:border-brand-500"
                     required
                   />
@@ -177,7 +177,7 @@ export const AuthModal = () => {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="np. Michał"
+                  placeholder="Wpisz nick..."
                   className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 text-sm text-white placeholder-dark-500 focus:outline-none focus:border-brand-500"
                 />
               </div>
@@ -191,7 +191,7 @@ export const AuthModal = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="twoj@email.com"
+                    placeholder="Wpisz adres email..."
                     className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 pl-9 text-sm text-white placeholder-dark-500 focus:outline-none focus:border-brand-500"
                     required
                   />

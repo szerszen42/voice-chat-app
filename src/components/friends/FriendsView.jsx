@@ -235,7 +235,7 @@ export const FriendsView = ({
               Dodaj znajomego
             </h2>
             <p className="text-xs text-dark-300 mb-4">
-              Możesz dodać znajomego, wpisując jego nazwę użytkownika (np. <span className="text-dark-100 font-mono">piotrek</span> lub <span className="text-dark-100 font-mono">kasia</span>).
+              Możesz dodać znajomego, wpisując jego nazwę użytkownika.
             </p>
 
             {/* Formularz wyszukiwania / dodawania */}
@@ -248,7 +248,7 @@ export const FriendsView = ({
             >
               <input
                 type="text"
-                placeholder="Wpisz nazwę użytkownika (np. kasia)..."
+                placeholder="Wpisz nazwę użytkownika..."
                 value={friendUsernameInput}
                 onChange={(e) => setFriendUsernameInput(e.target.value)}
                 className="w-full bg-dark-900 border border-dark-900 focus:border-brand-500 rounded-xl px-4 py-3 text-sm text-white placeholder-dark-400 focus:outline-none focus:ring-1 focus:ring-brand-500 transition-all pr-44"

@@ -65,13 +65,10 @@ export const JoinServerModal = ({ isOpen, onClose, onServerJoined }) => {
               type="text"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
-              placeholder="np. GLOWNA-SPOLECZNOSC lub EKIPA-4A9F"
+              placeholder="Wpisz kod zaproszenia..."
               className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-dark-500 font-mono tracking-wider focus:outline-none focus:border-brand-500 uppercase"
               required
             />
-            <span className="text-[11px] text-dark-400 mt-1 block">
-              Przykładowe kody: <code className="text-brand-400">GLOWNA-SPOLECZNOSC</code>, <code className="text-brand-400">GRACZE-2026</code>
-            </span>
           </div>
 
           <div className="pt-2 flex items-center justify-end space-x-2">

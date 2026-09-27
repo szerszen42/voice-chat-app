@@ -406,7 +406,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   type="text"
                   value={customStatus}
                   onChange={(e) => setCustomStatus(e.target.value)}
-                  placeholder="np. Gra w CS2 / Słucha muzyki 🎧"
+                  placeholder="Wpisz swój status..."
                   className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-brand-500"
                 />
               </div>

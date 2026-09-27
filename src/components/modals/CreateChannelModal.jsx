@@ -108,7 +108,7 @@ export const CreateChannelModal = ({ isOpen, onClose, serverId, initialType = 't
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={type === 'text' ? 'np. ogólny-czat' : 'np. Pokój Rozmów'}
+                placeholder={type === 'text' ? 'Wpisz nazwę kanału...' : 'Wpisz nazwę pokoju...'}
                 className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 pl-8 text-sm text-white focus:outline-none focus:border-brand-500"
                 required
               />
