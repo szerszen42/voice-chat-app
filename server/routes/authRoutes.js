@@ -101,11 +101,33 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Weryfikacja zalogowanego profilu (Me)
+// Weryfikacja zalogowanego profilu (Me) z autoodtwarzaniem po restarcie serwera
 router.get('/me', authenticateJWT, (req, res) => {
-  const user = db.findUserById(req.user.id);
+  let user = db.findUserById(req.user.id);
+  
   if (!user) {
-    return res.status(404).json({ error: 'Użytkownik nie istnieje.' });
+    // Autoodtwarzanie konta po restarcie kontenera Render na podstawie poprawnego tokenu JWT
+    user = {
+      id: req.user.id,
+      username: req.user.username || 'user',
+      email: `${(req.user.username || 'user').toLowerCase()}@voicechat.local`,
+      passwordHash: '',
+      displayName: req.user.displayName || req.user.username || 'Użytkownik',
+      avatarColor: '#5865f2',
+      avatarEmoji: '🎮',
+      status: 'online',
+      customStatus: '',
+      bio: 'Użytkownik VoiceChat',
+      createdAt: new Date().toISOString()
+    };
+    db.createUser(user);
+    console.log(`🔄 [Auto-Heal] Przywrócono użytkownika ${user.username} (${user.id}) po restarcie bazy.`);
+
+    // Dołącz użytkownika do domyślnego serwera publicznego
+    const publicServers = db.getPublicServers();
+    if (publicServers.length > 0) {
+      db.addServerMember(publicServers[0].id, user.id);
+    }
   }
 
   const { passwordHash: _, ...safeUser } = user;

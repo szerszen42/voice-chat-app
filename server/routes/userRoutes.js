@@ -90,11 +90,25 @@ router.patch('/profile', authenticateJWT, (req, res) => {
     if (customStatus !== undefined) updates.customStatus = customStatus;
     if (bio !== undefined) updates.bio = bio;
 
-    const updatedUser = db.updateUser(req.user.id, updates);
-    if (!updatedUser) {
-      return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+    let user = db.findUserById(req.user.id);
+    if (!user) {
+      user = {
+        id: req.user.id,
+        username: req.user.username || 'user',
+        email: `${(req.user.username || 'user').toLowerCase()}@voicechat.local`,
+        passwordHash: '',
+        displayName: req.user.displayName || req.user.username || 'Użytkownik',
+        avatarColor: '#5865f2',
+        avatarEmoji: '🎮',
+        status: 'online',
+        customStatus: '',
+        bio: '',
+        createdAt: new Date().toISOString()
+      };
+      db.createUser(user);
     }
 
+    const updatedUser = db.updateUser(req.user.id, updates);
     const { passwordHash: _, ...safeUser } = updatedUser;
     res.json({ user: safeUser });
   } catch (err) {

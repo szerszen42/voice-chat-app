@@ -16,7 +16,44 @@ if (!fs.existsSync(DATA_DIR)) {
 
 const defaultInitialData = {
   users: [],
-  servers: [],
+  servers: [
+    {
+      id: "srv-public-1",
+      name: "Główna Społeczność",
+      description: "Oficjalny serwer publiczny dla wszystkich użytkowników aplikacji.",
+      icon: "🌍",
+      color: "#5865f2",
+      isPublic: true,
+      ownerId: "system",
+      inviteCode: "GLOWNA-SPOLECZNOSC",
+      members: [],
+      channels: [
+        {
+          id: "ch-text-1",
+          name: "ogólny",
+          type: "text",
+          topic: "Rozmowy na każdy temat"
+        },
+        {
+          id: "ch-text-2",
+          name: "gry-i-zabawa",
+          type: "text",
+          topic: "Dzielenie się grami i memami"
+        },
+        {
+          id: "ch-voice-1",
+          name: "🔊 Pokój rozmów",
+          type: "voice"
+        },
+        {
+          id: "ch-voice-2",
+          name: "🔊 Gaming Lounge",
+          type: "voice"
+        }
+      ],
+      createdAt: new Date().toISOString()
+    }
+  ],
   messages: [],
   directMessages: [],
   friendships: []
@@ -25,10 +62,26 @@ const defaultInitialData = {
 class JSONDatabase {
   constructor() {
     this.data = this.load();
+    this.ensureDefaultData();
     this.mongoClient = null;
     this.mongoDb = null;
     this.mongoCollection = null;
     this.initMongo();
+  }
+
+  ensureDefaultData() {
+    if (!this.data) this.data = JSON.parse(JSON.stringify(defaultInitialData));
+    if (!Array.isArray(this.data.users)) this.data.users = [];
+    if (!Array.isArray(this.data.servers)) this.data.servers = [];
+    if (!Array.isArray(this.data.messages)) this.data.messages = [];
+    if (!Array.isArray(this.data.directMessages)) this.data.directMessages = [];
+    if (!Array.isArray(this.data.friendships)) this.data.friendships = [];
+
+    // Upewnij się, że serwer publiczny zawsze istnieje
+    if (this.data.servers.length === 0 || !this.data.servers.some(s => s.id === 'srv-public-1' || s.isPublic)) {
+      this.data.servers.unshift(JSON.parse(JSON.stringify(defaultInitialData.servers[0])));
+      this.save();
+    }
   }
 
   load() {
@@ -38,7 +91,11 @@ class JSONDatabase {
         return JSON.parse(JSON.stringify(defaultInitialData));
       }
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (!parsed.servers || parsed.servers.length === 0) {
+        parsed.servers = JSON.parse(JSON.stringify(defaultInitialData.servers));
+      }
+      return parsed;
     } catch (err) {
       console.error('Błąd wczytywania bazy danych, inicjalizacja domyślnych danych:', err);
       return JSON.parse(JSON.stringify(defaultInitialData));
