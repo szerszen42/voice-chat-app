@@ -1,0 +1,133 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React Frontend
+        run: npm run build
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare Capacitor Android Project
+        run: |
+          if [ ! -d "android" ]; then
+            npx @capacitor/cli add android
+          fi
+          npx @capacitor/cli sync android
+
+      - name: Configure Android Native Permissions and Audio
+        run: |
+          mkdir -p android/app/src/main/java/com/voicechat/app
+          cat << 'EOF' > android/app/src/main/java/com/voicechat/app/MainActivity.java
+          package com.voicechat.app;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebView;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          import java.util.ArrayList;
+          import java.util.List;
+
+          public class MainActivity extends BridgeActivity {
+              private static final int PERMISSION_REQUEST_CODE = 1001;
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  requestAudioPermissions();
+
+                  try {
+                      WebView webView = this.getBridge().getWebView();
+                      if (webView != null) {
+                          webView.setWebChromeClient(new WebChromeClient() {
+                              @Override
+                              public void onPermissionRequest(final PermissionRequest request) {
+                                  MainActivity.this.runOnUiThread(() -> {
+                                      try {
+                                          request.grant(request.getResources());
+                                      } catch (Exception e) {
+                                          e.printStackTrace();
+                                      }
+                                  });
+                              }
+                          });
+                      }
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  }
+              }
+
+              @Override
+              public void onResume() {
+                  super.onResume();
+                  requestAudioPermissions();
+              }
+
+              private void requestAudioPermissions() {
+                  List<String> permissionsNeeded = new ArrayList<>();
+
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      permissionsNeeded.add(Manifest.permission.RECORD_AUDIO);
+                  }
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.MODIFY_AUDIO_SETTINGS) != PackageManager.PERMISSION_GRANTED) {
+                      permissionsNeeded.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                          permissionsNeeded.add(Manifest.permission.BLUETOOTH_CONNECT);
+                      }
+                  }
+
+                  if (!permissionsNeeded.isEmpty()) {
+                      ActivityCompat.requestPermissions(this, permissionsNeeded.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+                  }
+              }
+          }
+          EOF
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload VoiceChat APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChat-Mobile
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
