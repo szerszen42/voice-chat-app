@@ -62,7 +62,7 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Inject Android Native Mic Permissions & WebChromeClient
+      - name: Inject Android Native Mic Permissions & BridgeWebChromeClient
         run: |
           mkdir -p android/app/src/main/java/com/voicechat/app
           cat << 'EOF' > android/app/src/main/java/com/voicechat/app/MainActivity.java
@@ -73,11 +73,11 @@ jobs:
           import android.os.Build;
           import android.os.Bundle;
           import android.webkit.PermissionRequest;
-          import android.webkit.WebChromeClient;
           import android.webkit.WebView;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebChromeClient;
           import java.util.ArrayList;
           import java.util.List;
 
@@ -87,12 +87,12 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  requestAudioPermissions();
+                  requestAppPermissions();
 
                   try {
                       WebView webView = this.getBridge().getWebView();
                       if (webView != null) {
-                          webView.setWebChromeClient(new WebChromeClient() {
+                          webView.setWebChromeClient(new BridgeWebChromeClient(this.getBridge()) {
                               @Override
                               public void onPermissionRequest(final PermissionRequest request) {
                                   MainActivity.this.runOnUiThread(() -> {
@@ -113,10 +113,10 @@ jobs:
               @Override
               public void onResume() {
                   super.onResume();
-                  requestAudioPermissions();
+                  requestAppPermissions();
               }
 
-              private void requestAudioPermissions() {
+              private void requestAppPermissions() {
                   List<String> permissionsNeeded = new ArrayList<>();
 
                   if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -130,6 +130,18 @@ jobs:
                           permissionsNeeded.add(Manifest.permission.BLUETOOTH_CONNECT);
                       }
                   }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                          permissionsNeeded.add(Manifest.permission.READ_MEDIA_IMAGES);
+                      }
+                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                          permissionsNeeded.add(Manifest.permission.READ_MEDIA_VIDEO);
+                      }
+                  } else {
+                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                          permissionsNeeded.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+                      }
+                  }
 
                   if (!permissionsNeeded.isEmpty()) {
                       ActivityCompat.requestPermissions(this, permissionsNeeded.toArray(new String[0]), PERMISSION_REQUEST_CODE);
@@ -140,7 +152,7 @@ jobs:
 
       - name: Inject Permissions into AndroidManifest
         run: |
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.BLUETOOTH" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.microphone" android:required="false" />' android/app/src/main/AndroidManifest.xml || true
+          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.BLUETOOTH" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-feature android:name="android.hardware.microphone" android:required="false" />' android/app/src/main/AndroidManifest.xml || true
 
       - name: Build Android Debug APK
         run: |
