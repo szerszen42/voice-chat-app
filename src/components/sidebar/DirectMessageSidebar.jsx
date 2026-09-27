@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { UserPlus, Search, MessageCircle, Phone, Copy, Check, Users } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { BottomUserBar } from '../common/BottomUserBar';
@@ -9,6 +9,7 @@ import { usePwaInstall } from '../../hooks/usePwaInstall';
 export const DirectMessageSidebar = ({
   conversations = [],
   allUsers = [],
+  friends = [],
   activeDmUser,
   activeDmTab = 'chat', // 'friends' | 'chat'
   incomingRequestsCount = 0,
@@ -19,7 +20,6 @@ export const DirectMessageSidebar = ({
   onOpenUserProfile
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showUserSearch, setShowUserSearch] = useState(false);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, user }
   const [copiedNick, setCopiedNick] = useState(false);
   const { isStandalone } = usePwaInstall();
@@ -58,17 +58,56 @@ export const DirectMessageSidebar = ({
     setTimeout(() => setCopiedNick(false), 2000);
   };
 
-  const filteredConversations = conversations.filter(conv => {
-    const q = searchQuery.toLowerCase();
-    const name = (conv.user.displayName || conv.user.username).toLowerCase();
-    return name.includes(q) || conv.user.username.toLowerCase().includes(q);
-  });
+  // Łączymy: 1. Aktywne rozmowy, 2. Znajomych, 3. Wszystkich zarejestrowanych użytkowników
+  const displayItems = useMemo(() => {
+    const list = [];
+    const seenIds = new Set();
 
-  const availableUsers = allUsers.filter(u => {
-    const q = searchQuery.toLowerCase();
-    const name = (u.displayName || u.username).toLowerCase();
-    return name.includes(q) || u.username.toLowerCase().includes(q);
-  });
+    // 1. Użytkownicy z aktywnymi wiadomościami
+    conversations.forEach(conv => {
+      if (conv?.user && !seenIds.has(conv.user.id)) {
+        seenIds.add(conv.user.id);
+        list.push({
+          user: conv.user,
+          lastMessage: conv.lastMessage,
+          isFriend: friends.some(f => f.id === conv.user.id)
+        });
+      }
+    });
+
+    // 2. Wszyscy dodani znajomi
+    friends.forEach(f => {
+      if (f && !seenIds.has(f.id)) {
+        seenIds.add(f.id);
+        list.push({
+          user: f,
+          lastMessage: null,
+          isFriend: true
+        });
+      }
+    });
+
+    // 3. Pozostali użytkownicy aplikacji (aby od razu ich widzieć bez klikania)
+    allUsers.forEach(u => {
+      if (u && !seenIds.has(u.id)) {
+        seenIds.add(u.id);
+        list.push({
+          user: u,
+          lastMessage: null,
+          isFriend: false
+        });
+      }
+    });
+
+    // Filtrowanie po wyszukiwarce
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase().trim();
+    return list.filter(item => {
+      const name = (item.user?.displayName || item.user?.username || '').toLowerCase();
+      const uname = (item.user?.username || '').toLowerCase();
+      return name.includes(q) || uname.includes(q);
+    });
+  }, [conversations, friends, allUsers, searchQuery]);
 
   return (
     <div className="w-60 max-w-[calc(100vw-72px)] bg-dark-800 flex flex-col h-full border-r border-dark-900/60 select-none relative">
@@ -77,22 +116,13 @@ export const DirectMessageSidebar = ({
         <div className="relative flex-1">
           <input
             type="text"
-            placeholder="Szukaj rozmowy..."
+            placeholder="Szukaj znajomego..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-dark-900 text-dark-100 placeholder-dark-400 text-xs px-2.5 py-1.5 rounded-md focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <Search size={14} className="absolute right-2.5 top-2 text-dark-400" />
         </div>
-        <button
-          onClick={() => setShowUserSearch(!showUserSearch)}
-          className={`p-1.5 rounded-md transition-colors ${
-            showUserSearch ? 'bg-brand-500 text-white' : 'bg-dark-900 text-dark-300 hover:text-white hover:bg-dark-700'
-          }`}
-          title="Rozpocznij nową rozmowę ze znajomym"
-        >
-          <UserPlus size={16} />
-        </button>
       </div>
 
       {/* Baner instalacji aplikacji mobilnej */}
@@ -114,15 +144,14 @@ export const DirectMessageSidebar = ({
         </div>
       )}
 
-      {/* Lista rozmów lub lista wszystkich użytkowników */}
+      {/* Lista znajomych i aktywnych wiadomości */}
       <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 scrollbar-thin">
         {/* Przycisk Znajomi w stylu Discorda */}
         <button
           onClick={() => {
             if (onOpenFriendsView) onOpenFriendsView();
-            setShowUserSearch(false);
           }}
-          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-semibold text-xs transition-colors mb-2 group ${
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-semibold text-xs transition-colors mb-2 group cursor-pointer ${
             activeDmTab === 'friends' && !activeDmUser
               ? 'bg-dark-600 text-white shadow-sm'
               : 'text-dark-300 hover:bg-dark-700/60 hover:text-dark-100'
@@ -139,91 +168,67 @@ export const DirectMessageSidebar = ({
           )}
         </button>
 
-        {showUserSearch ? (
-          <div>
-            <div className="px-2 pb-1.5 text-xs font-bold text-brand-500 uppercase tracking-wider">
-              Wybierz znajomego
-            </div>
-            {availableUsers.length === 0 ? (
-              <div className="text-xs text-dark-400 text-center py-4">
-                Brak użytkowników
-              </div>
-            ) : (
-              availableUsers.map((targetUser) => (
-                <button
-                  key={targetUser.id}
-                  onClick={() => {
-                    onSelectDmUser(targetUser);
-                    setShowUserSearch(false);
-                  }}
-                  onContextMenu={(e) => handleUserContextMenu(e, targetUser)}
-                  className="w-full flex items-center space-x-2.5 px-2 py-2 rounded-md hover:bg-dark-700/60 text-left transition-colors group"
-                >
-                  <UserAvatar
-                    user={targetUser}
-                    size="sm"
-                    statusOverride={userStatuses[targetUser.id]}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-dark-100 truncate group-hover:text-white">
-                      {targetUser.displayName || targetUser.username}
-                    </div>
-                    <div className="text-xs text-dark-400 truncate">
-                      @{targetUser.username}
-                    </div>
-                  </div>
-                  <MessageCircle size={16} className="text-dark-400 group-hover:text-brand-500" />
-                </button>
-              ))
-            )}
+        <div>
+          <div className="flex items-center justify-between px-2 pb-1.5 text-xs font-semibold text-dark-400 uppercase tracking-wider">
+            <span>Wiadomości prywatne</span>
+            <span className="text-[10px] text-dark-500 font-mono">({displayItems.length})</span>
           </div>
-        ) : (
-          <div>
-            <div className="px-2 pb-1.5 text-xs font-semibold text-dark-400 uppercase tracking-wider">
-              Wiadomości prywatne
-            </div>
-            {filteredConversations.length === 0 ? (
-              <div className="text-center py-8 px-4 text-xs text-dark-400">
-                <MessageCircle size={28} className="mx-auto mb-2 opacity-40" />
-                Brak aktywnych rozmów. Kliknij ikonę u góry, aby rozpocząć czat ze znajomym!
-              </div>
-            ) : (
-              filteredConversations.map((conv) => {
-                const isActive = activeDmUser?.id === conv.user.id;
-                const status = userStatuses[conv.user.id] || conv.user.status;
 
-                return (
-                  <button
-                    key={conv.user.id}
-                    onClick={() => onSelectDmUser(conv.user)}
-                    onContextMenu={(e) => handleUserContextMenu(e, conv.user)}
-                    className={`w-full flex items-center space-x-2.5 px-2.5 py-2 rounded-md transition-colors text-left group ${
-                      isActive
-                        ? 'bg-dark-600 text-white'
-                        : 'text-dark-300 hover:bg-dark-700/60 hover:text-dark-100'
-                    }`}
+          {displayItems.length === 0 ? (
+            <div className="text-center py-8 px-4 text-xs text-dark-400">
+              <MessageCircle size={28} className="mx-auto mb-2 opacity-40" />
+              Brak zarejestrowanych osób do wyświetlenia.
+            </div>
+          ) : (
+            displayItems.map((item) => {
+              const isActive = activeDmUser?.id === item.user.id;
+              const status = userStatuses[item.user.id] || item.user.status || 'offline';
+
+              return (
+                <div
+                  key={item.user.id}
+                  onClick={() => onSelectDmUser(item.user)}
+                  onContextMenu={(e) => handleUserContextMenu(e, item.user)}
+                  className={`w-full flex items-center space-x-2.5 px-2.5 py-2 rounded-lg transition-colors text-left group cursor-pointer ${
+                    isActive
+                      ? 'bg-dark-600 text-white shadow-sm'
+                      : 'text-dark-300 hover:bg-dark-700/60 hover:text-dark-100'
+                  }`}
+                  title={`${item.user.displayName || item.user.username} (Kliknij, aby otworzyć czat PV)`}
+                >
+                  <div
+                    onClick={(e) => {
+                      if (onOpenUserProfile) {
+                        e.stopPropagation();
+                        onOpenUserProfile(item.user.id);
+                      }
+                    }}
+                    className="cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0"
+                    title="Zobacz profil"
                   >
                     <UserAvatar
-                      user={conv.user}
+                      user={item.user}
                       size="sm"
                       statusOverride={status}
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">
-                        {conv.user.displayName || conv.user.username}
-                      </div>
-                      {conv.lastMessage && (
-                        <div className="text-xs text-dark-400 truncate">
-                          {conv.lastMessage.text}
-                        </div>
-                      )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate text-white group-hover:text-brand-400 transition-colors">
+                      {item.user.displayName || item.user.username}
                     </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        )}
+                    <div className="text-[11px] text-dark-400 truncate">
+                      {item.lastMessage
+                        ? item.lastMessage.text
+                        : item.user.customStatus
+                          ? item.user.customStatus
+                          : `@${item.user.username}`}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {/* MENU KONTEKSTOWE DLA UŻYTKOWNIKA DM */}

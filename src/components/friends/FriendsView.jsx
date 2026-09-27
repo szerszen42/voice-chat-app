@@ -37,7 +37,7 @@ export const FriendsView = ({
   const { userStatuses, socket } = useSocket();
   const { startDirectCall } = useVoice();
 
-  // Filtrowanie znajomych
+  // Filtrowanie znajomych i użytkowników
   const isOnline = (user) => {
     const status = userStatuses[user.id] || user.status || 'offline';
     return status !== 'offline';
@@ -51,12 +51,22 @@ export const FriendsView = ({
     return name.includes(q) || f.username.toLowerCase().includes(q);
   });
 
-  // Użytkownicy do sekcji polecanych w "Dodaj znajomego"
+  // Wszyscy pozostali zarejestrowani użytkownicy
   const friendIds = new Set(friends.map(f => f.id));
   const pendingIds = new Set([
     ...incomingRequests.map(r => r.user?.id || r.senderId),
     ...outgoingRequests.map(r => r.user?.id || r.recipientId)
   ]);
+  
+  const otherUsers = allUsers.filter(u => !friendIds.has(u.id));
+  const onlineOtherUsers = otherUsers.filter(u => isOnline(u));
+
+  const displayedOtherUsers = (activeTab === 'online' ? onlineOtherUsers : otherUsers).filter(u => {
+    const q = searchQuery.toLowerCase();
+    const name = (u.displayName || u.username).toLowerCase();
+    return name.includes(q) || u.username.toLowerCase().includes(q);
+  });
+
   const suggestedUsers = allUsers.filter(u => !friendIds.has(u.id) && !pendingIds.has(u.id));
 
   // Wysłanie zaproszenia do znajomych
@@ -423,30 +433,9 @@ export const FriendsView = ({
               {activeTab === 'online' ? `Dostępni znajomi — ${displayedFriends.length}` : `Wszyscy znajomi — ${displayedFriends.length}`}
             </div>
 
-            {displayedFriends.length === 0 ? (
-              <div className="text-center py-16 px-4">
-                <Users size={48} className="mx-auto mb-3 text-dark-500 opacity-40" />
-                <div className="text-sm font-semibold text-dark-200 mb-1">
-                  {friends.length === 0
-                    ? 'Nie masz jeszcze dodanych znajomych'
-                    : 'Brak dostępnych znajomych w tej chwili'}
-                </div>
-                <div className="text-xs text-dark-400 mb-4 max-w-sm mx-auto">
-                  {friends.length === 0
-                    ? 'Kliknij zielony przycisk "Dodaj znajomego" u góry i wpisz nick znajomego!'
-                    : 'Gdy Twoi znajomi zalogują się do aplikacji, pojawią się tutaj na liście dostępnych.'}
-                </div>
-                {friends.length === 0 && (
-                  <button
-                    onClick={() => setActiveTab('add')}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow"
-                  >
-                    Dodaj znajomego
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
+            {/* LISTA ZNAJOMYCH */}
+            {displayedFriends.length > 0 && (
+              <div className="space-y-1.5 mb-6">
                 {displayedFriends.map((f) => {
                   const status = userStatuses[f.id] || f.status || 'offline';
                   return (
@@ -472,7 +461,7 @@ export const FriendsView = ({
                           onClick={() => onSelectDmUser(f)}
                           className="min-w-0 cursor-pointer flex-1"
                         >
-                          <div className="text-sm font-bold text-white truncate group-hover:text-brand-500 transition-colors">
+                          <div className="text-sm font-bold text-white truncate group-hover:text-brand-400 transition-colors">
                             {f.displayName || f.username}
                           </div>
                           <div className="text-xs text-dark-400 truncate">
@@ -510,6 +499,107 @@ export const FriendsView = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* SEKCJA: INNI UŻYTKOWNICY APLIKACJI (AUTOMATYCZNIE WIDOCZNI BEZ KLIKANIA) */}
+            {displayedOtherUsers.length > 0 && (
+              <div>
+                <div className="flex items-center space-x-2 text-xs font-bold text-dark-300 uppercase tracking-wider mb-3 mt-4">
+                  <Sparkles size={14} className="text-brand-400" />
+                  <span>
+                    {activeTab === 'online'
+                      ? `Dostępni użytkownicy — ${displayedOtherUsers.length}`
+                      : `Wszyscy zarejestrowani użytkownicy — ${displayedOtherUsers.length}`}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {displayedOtherUsers.map((u) => {
+                    const status = userStatuses[u.id] || u.status || 'offline';
+                    const isPending = pendingIds.has(u.id);
+
+                    return (
+                      <div
+                        key={u.id}
+                        className="p-2.5 bg-dark-800/40 hover:bg-dark-800 border border-dark-600/20 rounded-xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
+                          <div
+                            onClick={() => {
+                              if (onOpenUserProfile) {
+                                onOpenUserProfile(u.id);
+                              } else {
+                                onSelectDmUser(u);
+                              }
+                            }}
+                            className="cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0"
+                            title="Zobacz profil"
+                          >
+                            <UserAvatar user={u} size="md" statusOverride={status} />
+                          </div>
+                          <div
+                            onClick={() => onSelectDmUser(u)}
+                            className="min-w-0 cursor-pointer flex-1"
+                          >
+                            <div className="text-sm font-semibold text-white truncate group-hover:text-brand-400 transition-colors">
+                              {u.displayName || u.username}
+                            </div>
+                            <div className="text-xs text-dark-400 truncate">
+                              {u.customStatus || `@${u.username} • ${status === 'online' ? '🟢 Dostępny' : status === 'dnd' ? '🔴 Nie przeszkadzać' : status === 'idle' ? '🟡 Zaraz wracam' : '⚫ Niewidoczny'}`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Przyciski akcji dla użytkownika */}
+                        <div className="flex items-center space-x-2 flex-shrink-0 ml-3">
+                          <button
+                            onClick={() => onSelectDmUser(u)}
+                            className="p-2 bg-dark-900 hover:bg-brand-500 text-dark-300 hover:text-white rounded-full transition-all shadow"
+                            title="Otwórz czat (PV)"
+                          >
+                            <MessageCircle size={16} />
+                          </button>
+
+                          <button
+                            onClick={() => startDirectCall(u)}
+                            className="p-2 bg-dark-900 hover:bg-emerald-600 text-dark-300 hover:text-white rounded-full transition-all shadow"
+                            title="Zadzwoń na PV"
+                          >
+                            <Phone size={16} />
+                          </button>
+
+                          {!isPending ? (
+                            <button
+                              onClick={() => handleSendRequest(u.username)}
+                              className="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all shadow"
+                              title="Dodaj do znajomych"
+                            >
+                              <UserPlus size={14} />
+                              <span className="hidden sm:inline">Dodaj</span>
+                            </button>
+                          ) : (
+                            <span className="px-2 py-1 bg-dark-900 text-dark-400 rounded-lg text-[10px] font-medium">
+                              Oczekuje
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {displayedFriends.length === 0 && displayedOtherUsers.length === 0 && (
+              <div className="text-center py-16 px-4">
+                <Users size={48} className="mx-auto mb-3 text-dark-500 opacity-40" />
+                <div className="text-sm font-semibold text-dark-200 mb-1">
+                  Brak osób do wyświetlenia
+                </div>
+                <div className="text-xs text-dark-400 mb-4 max-w-sm mx-auto">
+                  Gdy inni użytkownicy zarejestrują się w aplikacji, pojawią się tutaj automatycznie.
+                </div>
               </div>
             )}
           </div>

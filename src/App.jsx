@@ -467,6 +467,7 @@ export const App = () => {
           <DirectMessageSidebar
             conversations={conversations}
             allUsers={allUsers}
+            friends={friends}
             activeDmUser={activeDmUser}
             activeDmTab={activeDmTab}
             incomingRequestsCount={incomingRequests.length}
