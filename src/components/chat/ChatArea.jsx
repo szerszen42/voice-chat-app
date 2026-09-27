@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Hash, Phone, Smile, Send, Users, AtSign, Sparkles, MessageCircle, 
   Copy, Check, Menu, X, ChevronLeft, UserPlus, Shield, CheckSquare, Square,
-  Paperclip, Image as ImageIcon, Film, FileText, Download, Play, Maximize2, Search
+  Paperclip, Image as ImageIcon, Film, FileText, Download, Play, Maximize2, Search,
+  Trash2, Lock
 } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { useAuth } from '../../context/AuthContext';
@@ -78,6 +79,62 @@ export const ChatArea = ({
   const isOwner = server?.ownerId === user?.id;
   const userPermissions = server?.currentUserPermissions || [];
   const canManageRoles = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_ROLES');
+  const canManageMessages = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_MESSAGES');
+  const canManageChannels = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_CHANNELS');
+
+  const myRoleIds = (server?.memberRoles && user?.id && server.memberRoles[user.id]) || [];
+
+  const isChannelReadOnly = useMemo(() => {
+    if (!channel || channel.type !== 'text') return false;
+    if (isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_MESSAGES') || userPermissions.includes('MANAGE_CHANNELS')) {
+      return false;
+    }
+    if (channel.readOnly) {
+      if (channel.allowSendRoleIds && channel.allowSendRoleIds.length > 0) {
+        return !channel.allowSendRoleIds.some(rId => myRoleIds.includes(rId));
+      }
+      return true;
+    }
+    return false;
+  }, [channel, isOwner, userPermissions, myRoleIds]);
+
+  const canDeleteMsg = (msg) => {
+    if (!user || !msg) return false;
+    if (channel) {
+      const isAuthor = (msg.user?.id === user.id) || (msg.userId === user.id) || (msg.senderId === user.id);
+      return isAuthor || canManageMessages;
+    } else {
+      return (msg.senderId === user.id) || (msg.user?.id === user.id) || (msg.userId === user.id);
+    }
+  };
+
+  const handleDeleteMessage = async (msg) => {
+    if (!msg) return;
+    if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) return;
+
+    try {
+      if (channel) {
+        await api.deleteChannelMessage(channel.id, msg.id).catch(() => {});
+        if (socket) {
+          socket.emit('delete-message', {
+            messageId: msg.id,
+            channelId: channel.id,
+            serverId: server?.id
+          });
+        }
+      } else if (dmUser) {
+        if (socket) {
+          socket.emit('delete-direct-message', {
+            messageId: msg.id,
+            recipientId: dmUser.id
+          });
+        }
+      }
+      setMsgContextMenu(null);
+    } catch (err) {
+      console.error('Błąd usuwania wiadomości:', err);
+    }
+  };
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -484,8 +541,38 @@ export const ChatArea = ({
                 <div
                   key={msg.id || index}
                   onContextMenu={(e) => handleMsgRightClick(e, msg)}
-                  className="flex items-start space-x-3 p-1 rounded-md hover:bg-dark-600/30 transition-colors group cursor-pointer"
+                  className="flex items-start space-x-3 p-1.5 rounded-xl hover:bg-dark-600/30 transition-colors group cursor-pointer relative"
                 >
+                  {/* Pasek szybkich akcji po najechaniu myszką */}
+                  <div className="absolute top-1 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-dark-800/95 border border-dark-600 rounded-lg p-0.5 flex items-center space-x-1 shadow-lg z-10">
+                    {msg.text && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(msg.text || '');
+                        }}
+                        className="p-1 rounded hover:bg-dark-700 text-dark-300 hover:text-white transition-colors"
+                        title="Kopiuj tekst"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    )}
+                    {canDeleteMsg(msg) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteMessage(msg);
+                        }}
+                        className="p-1 rounded hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+                        title="Usuń wiadomość"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+
                   <div
                     onClick={(e) => {
                       e.stopPropagation();
@@ -704,74 +791,83 @@ export const ChatArea = ({
             )}
 
             {/* GŁÓWNY INPUT CZATU */}
-            <div className="bg-dark-600 rounded-xl flex items-center px-3 py-2 focus-within:ring-2 focus-within:ring-brand-500 shadow-inner">
-              
-              {/* Przycisk Załącznika (Zdjęcia, Filmy, Pliki) */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700/80 rounded-lg transition-colors mr-1 cursor-pointer flex-shrink-0"
-                title="Dodaj załącznik (Zdjęcie, Film, Plik)"
-              >
-                <Paperclip size={18} />
-              </button>
-
-              <textarea
-                rows="1"
-                value={inputText}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={channel ? `Napisz na #${channel.name} (wklejaj zdjęcia Ctrl+V, wysyłaj pliki)` : `Napisz do @${dmUser?.displayName || dmUser?.username}`}
-                className="flex-1 bg-transparent text-dark-100 placeholder-dark-400 text-sm focus:outline-none resize-none max-h-32"
-              />
-
-              <div className="flex items-center space-x-1.5 ml-2 text-dark-400 flex-shrink-0">
-                {/* Przycisk GIF */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowGifPicker(!showGifPicker);
-                    setShowEmojiPicker(false);
-                  }}
-                  className={`px-1.5 py-0.5 text-xs font-black rounded-md border transition-all cursor-pointer ${
-                    showGifPicker
-                      ? 'bg-brand-500 border-brand-500 text-white'
-                      : 'border-dark-500 text-dark-300 hover:border-white hover:text-white'
-                  }`}
-                  title="Wstaw GIF"
-                >
-                  GIF
-                </button>
-
-                {/* Przycisk Emoji */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEmojiPicker(!showEmojiPicker);
-                    setShowGifPicker(false);
-                  }}
-                  className="hover:text-amber-400 transition-colors p-1 cursor-pointer"
-                  title="Wstaw emoji"
-                >
-                  <Smile size={20} />
-                </button>
-
-                {/* Przycisk Wyślij */}
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!inputText.trim() && pendingAttachments.length === 0}
-                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                    inputText.trim() || pendingAttachments.length > 0
-                      ? 'bg-brand-500 text-white hover:bg-brand-600 shadow'
-                      : 'text-dark-500 cursor-not-allowed opacity-50'
-                  }`}
-                  title="Wyślij wiadomość (Enter)"
-                >
-                  <Send size={16} />
-                </button>
+            {isChannelReadOnly ? (
+              <div className="bg-dark-800/80 border border-dark-700/80 rounded-xl p-3.5 flex items-center justify-center space-x-2.5 text-dark-300 text-xs shadow-inner">
+                <Lock size={16} className="text-amber-400 flex-shrink-0" />
+                <span className="font-medium text-center">
+                  Ten kanał jest tylko do odczytu (ogłoszenia). Tylko administratorzy i uprawnione role mogą wysyłać wiadomości.
+                </span>
               </div>
-            </div>
+            ) : (
+              <div className="bg-dark-600 rounded-xl flex items-center px-3 py-2 focus-within:ring-2 focus-within:ring-brand-500 shadow-inner">
+                
+                {/* Przycisk Załącznika (Zdjęcia, Filmy, Pliki) */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700/80 rounded-lg transition-colors mr-1 cursor-pointer flex-shrink-0"
+                  title="Dodaj załącznik (Zdjęcie, Film, Plik)"
+                >
+                  <Paperclip size={18} />
+                </button>
+
+                <textarea
+                  rows="1"
+                  value={inputText}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={channel ? `Napisz na #${channel.name} (wklejaj zdjęcia Ctrl+V, wysyłaj pliki)` : `Napisz do @${dmUser?.displayName || dmUser?.username}`}
+                  className="flex-1 bg-transparent text-dark-100 placeholder-dark-400 text-sm focus:outline-none resize-none max-h-32"
+                />
+
+                <div className="flex items-center space-x-1.5 ml-2 text-dark-400 flex-shrink-0">
+                  {/* Przycisk GIF */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGifPicker(!showGifPicker);
+                      setShowEmojiPicker(false);
+                    }}
+                    className={`px-1.5 py-0.5 text-xs font-black rounded-md border transition-all cursor-pointer ${
+                      showGifPicker
+                        ? 'bg-brand-500 border-brand-500 text-white'
+                        : 'border-dark-500 text-dark-300 hover:border-white hover:text-white'
+                    }`}
+                    title="Wstaw GIF"
+                  >
+                    GIF
+                  </button>
+
+                  {/* Przycisk Emoji */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEmojiPicker(!showEmojiPicker);
+                      setShowGifPicker(false);
+                    }}
+                    className="hover:text-amber-400 transition-colors p-1 cursor-pointer"
+                    title="Wstaw emoji"
+                  >
+                    <Smile size={20} />
+                  </button>
+
+                  {/* Przycisk Wyślij */}
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={!inputText.trim() && pendingAttachments.length === 0}
+                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                      inputText.trim() || pendingAttachments.length > 0
+                        ? 'bg-brand-500 text-white hover:bg-brand-600 shadow'
+                        : 'text-dark-500 cursor-not-allowed opacity-50'
+                    }`}
+                    title="Wyślij wiadomość (Enter)"
+                  >
+                    <Send size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -937,22 +1033,37 @@ export const ChatArea = ({
       {msgContextMenu && (
         <div
           ref={menuRef}
-          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[160px] animate-fade-in text-dark-100 space-y-0.5"
+          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[170px] animate-fade-in text-dark-100 space-y-0.5"
           style={{
             top: msgContextMenu.y,
             left: msgContextMenu.x
           }}
         >
-          <button
-            onClick={() => {
-              copyToClipboard(msgContextMenu.message.text || '');
-              setMsgContextMenu(null);
-            }}
-            className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors cursor-pointer"
-          >
-            <Copy size={14} />
-            <span>Kopiuj tekst</span>
-          </button>
+          {msgContextMenu.message.text && (
+            <button
+              onClick={() => {
+                copyToClipboard(msgContextMenu.message.text || '');
+                setMsgContextMenu(null);
+              }}
+              className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors cursor-pointer"
+            >
+              <Copy size={14} />
+              <span>Kopiuj tekst</span>
+            </button>
+          )}
+
+          {canDeleteMsg(msgContextMenu.message) && (
+            <button
+              onClick={() => {
+                handleDeleteMessage(msgContextMenu.message);
+                setMsgContextMenu(null);
+              }}
+              className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors cursor-pointer font-medium"
+            >
+              <Trash2 size={14} />
+              <span>Usuń wiadomość</span>
+            </button>
+          )}
         </div>
       )}
 

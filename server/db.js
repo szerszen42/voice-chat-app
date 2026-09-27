@@ -152,24 +152,24 @@ class JSONDatabase {
           name: '👑 Właściciel',
           color: '#f1c40f',
           hoist: true,
-          position: 100,
-          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 1000,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-admin',
           name: '🛡️ Administrator',
           color: '#ed4245',
           hoist: true,
-          position: 50,
-          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 500,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-mod',
           name: '⭐ Moderator',
           color: '#2ecc71',
           hoist: true,
-          position: 30,
-          permissions: ['MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 300,
+          permissions: ['MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-everyone',
@@ -233,24 +233,24 @@ class JSONDatabase {
           name: '👑 Właściciel',
           color: '#f1c40f',
           hoist: true,
-          position: 100,
-          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 1000,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-admin',
           name: '🛡️ Administrator',
           color: '#ed4245',
           hoist: true,
-          position: 50,
-          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 500,
+          permissions: ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-mod',
           name: '⭐ Moderator',
           color: '#2ecc71',
           hoist: true,
-          position: 30,
-          permissions: ['MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
+          position: 300,
+          permissions: ['MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK']
         },
         {
           id: 'role-everyone',
@@ -388,6 +388,31 @@ class JSONDatabase {
     return true;
   }
 
+  reorderServerRoles(serverId, roleIdsOrdered) {
+    const server = this.getServerById(serverId);
+    if (!server || !Array.isArray(roleIdsOrdered)) return null;
+
+    this.ensureServerRoles(server);
+
+    const total = roleIdsOrdered.length;
+    server.roles.forEach(role => {
+      const idx = roleIdsOrdered.indexOf(role.id);
+      if (idx !== -1) {
+        role.position = (total - idx) * 10;
+      }
+    });
+
+    const ownerRole = server.roles.find(r => r.id === 'role-owner');
+    if (ownerRole) ownerRole.position = 1000;
+
+    const everyoneRole = server.roles.find(r => r.id === 'role-everyone');
+    if (everyoneRole) everyoneRole.position = 0;
+
+    server.roles.sort((a, b) => (b.position || 0) - (a.position || 0));
+    this.save();
+    return server.roles;
+  }
+
   setMemberRoles(serverId, memberId, roleIds) {
     const server = this.getServerById(serverId);
     if (!server) return null;
@@ -457,7 +482,7 @@ class JSONDatabase {
   getUserPermissions(server, userId) {
     if (!server) return [];
     if (server.ownerId === userId) {
-      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
+      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
     }
 
     const roles = this.getMemberRoles(server, userId);
@@ -470,7 +495,7 @@ class JSONDatabase {
     }
 
     if (permissionsSet.has('ADMINISTRATOR')) {
-      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
+      return ['ADMINISTRATOR', 'MANAGE_SERVER', 'MANAGE_ROLES', 'MANAGE_CHANNELS', 'MANAGE_MESSAGES', 'MOVE_MEMBERS', 'MUTE_MEMBERS', 'SEND_MESSAGES', 'CONNECT', 'SPEAK'];
     }
 
     return Array.from(permissionsSet);
@@ -530,6 +555,16 @@ class JSONDatabase {
     return msg;
   }
 
+  deleteMessage(messageId) {
+    const idx = this.data.messages.findIndex(m => m.id === messageId);
+    if (idx !== -1) {
+      const [deleted] = this.data.messages.splice(idx, 1);
+      this.save();
+      return deleted;
+    }
+    return null;
+  }
+
   // --- Wiadomości Prywatne (PV / DM) ---
   getDirectMessagesBetween(userAId, userBId, limit = 100) {
     return this.data.directMessages
@@ -544,6 +579,16 @@ class JSONDatabase {
     this.data.directMessages.push(dm);
     this.save();
     return dm;
+  }
+
+  deleteDirectMessage(messageId) {
+    const idx = this.data.directMessages.findIndex(m => m.id === messageId);
+    if (idx !== -1) {
+      const [deleted] = this.data.directMessages.splice(idx, 1);
+      this.save();
+      return deleted;
+    }
+    return null;
   }
 
   // --- Znajomi i Zaproszenia do znajomych (Discord-style) ---

@@ -60,6 +60,35 @@ export const setupSocketHandlers = (io) => {
       const user = db.findUserById(currentUserId);
       if (!user) return;
 
+      // Sprawdź uprawnienia kanału tekstowego (readOnly / isPrivate)
+      if (serverId) {
+        const server = db.getServerById(serverId);
+        if (server) {
+          const ch = (server.channels || []).find(c => c.id === channelId);
+          if (ch) {
+            const isOwner = server.ownerId === currentUserId;
+            const canManage = isOwner || db.hasServerPermission(server, currentUserId, 'MANAGE_MESSAGES') || db.hasServerPermission(server, currentUserId, 'MANAGE_CHANNELS');
+            const userRoles = db.getMemberRoles(server, currentUserId).map(r => r.id);
+
+            if (ch.readOnly && !canManage) {
+              const allowed = ch.allowSendRoleIds && ch.allowSendRoleIds.some(rId => userRoles.includes(rId));
+              if (!allowed) {
+                socket.emit('error-notice', { message: 'Ten kanał jest tylko do odczytu.' });
+                return;
+              }
+            }
+
+            if (ch.isPrivate && !canManage) {
+              const allowed = ch.allowedRoleIds && ch.allowedRoleIds.some(rId => userRoles.includes(rId));
+              if (!allowed) {
+                socket.emit('error-notice', { message: 'Brak dostępu do tego kanału prywatnego.' });
+                return;
+              }
+            }
+          }
+        }
+      }
+
       const newMsg = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         channelId,
@@ -156,11 +185,82 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
+    socket.on('delete-message', ({ messageId, channelId, serverId }) => {
+      if (!currentUserId || !messageId) return;
+
+      const messages = db.data.messages || [];
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg) return;
+
+      const server = db.getServerById(serverId || msg.serverId);
+      const isAuthor = msg.userId === currentUserId;
+      const canManage = server ? db.hasServerPermission(server, currentUserId, 'MANAGE_MESSAGES') : false;
+
+      if (!isAuthor && !canManage) return;
+
+      db.deleteMessage(messageId);
+
+      io.to(`channel:${channelId || msg.channelId}`).emit('message-deleted', {
+        messageId,
+        channelId: channelId || msg.channelId
+      });
+    });
+
+    socket.on('delete-direct-message', ({ messageId, recipientId }) => {
+      if (!currentUserId || !messageId) return;
+
+      const dms = db.data.directMessages || [];
+      const dm = dms.find(m => m.id === messageId);
+      if (!dm) return;
+
+      if (dm.senderId !== currentUserId) return;
+
+      db.deleteDirectMessage(messageId);
+
+      const targetId = recipientId || (dm.senderId === currentUserId ? dm.recipientId : dm.senderId);
+      const otherSockets = userSockets.get(targetId);
+      if (otherSockets) {
+        otherSockets.forEach(sId => io.to(sId).emit('direct-message-deleted', { messageId }));
+      }
+      socket.emit('direct-message-deleted', { messageId });
+    });
+
     // --- KANAŁY GŁOSOWE (WebRTC Voice Rooms) ---
     socket.on('join-voice-channel', ({ channelId, serverId }) => {
       if (!currentUserId || !channelId) return;
       const user = db.findUserById(currentUserId);
       if (!user) return;
+
+      // Sprawdź uprawnienia do wejścia na kanał głosowy
+      if (serverId) {
+        const server = db.getServerById(serverId);
+        if (server) {
+          const ch = (server.channels || []).find(c => c.id === channelId);
+          if (ch) {
+            const userRoles = db.getMemberRoles(server, currentUserId);
+            const userRoleIds = userRoles.map(r => r.id);
+            const isOwner = server.ownerId === currentUserId;
+            const isAdmin = isOwner || userRoleIds.includes('role-owner') || userRoleIds.includes('role-admin') || db.hasServerPermission(server, currentUserId, 'ADMINISTRATOR');
+
+            if (!isAdmin) {
+              if (ch.isPrivate && ch.allowedRoleIds && ch.allowedRoleIds.length > 0) {
+                const hasAccess = ch.allowedRoleIds.some(rId => userRoleIds.includes(rId));
+                if (!hasAccess) {
+                  socket.emit('voice-join-denied', { channelId, message: 'Brak uprawnień do dołączenia do tego kanału głosowego.' });
+                  return;
+                }
+              }
+              if (ch.allowConnectRoleIds && ch.allowConnectRoleIds.length > 0) {
+                const hasConnect = ch.allowConnectRoleIds.some(rId => userRoleIds.includes(rId));
+                if (!hasConnect) {
+                  socket.emit('voice-join-denied', { channelId, message: 'Do tego kanału głosowego mogą dołączać tylko wyznaczone role.' });
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
 
       const safeUser = {
         id: user.id,

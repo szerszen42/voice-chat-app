@@ -281,8 +281,14 @@ export const App = () => {
       }
     };
 
+    const handleMessageDeleted = ({ messageId }) => {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    };
+
     socket.on('new-message', handleNewChannelMessage);
     socket.on('new-direct-message', handleNewDirectMessage);
+    socket.on('message-deleted', handleMessageDeleted);
+    socket.on('direct-message-deleted', handleMessageDeleted);
     socket.on('friend-request-received', handleFriendRequestReceived);
     socket.on('friend-accepted', handleFriendAccepted);
     socket.on('friend-removed', handleFriendRemoved);
@@ -291,6 +297,8 @@ export const App = () => {
     return () => {
       socket.off('new-message', handleNewChannelMessage);
       socket.off('new-direct-message', handleNewDirectMessage);
+      socket.off('message-deleted', handleMessageDeleted);
+      socket.off('direct-message-deleted', handleMessageDeleted);
       socket.off('friend-request-received', handleFriendRequestReceived);
       socket.off('friend-accepted', handleFriendAccepted);
       socket.off('friend-removed', handleFriendRemoved);
@@ -671,6 +679,7 @@ export const App = () => {
       <CreateChannelModal
         isOpen={isCreateChannelOpen}
         onClose={() => setIsCreateChannelOpen(false)}
+        server={activeServer}
         serverId={activeServer?.id}
         initialType={createChannelType}
         onChannelCreated={handleChannelCreated}
@@ -679,6 +688,7 @@ export const App = () => {
       <EditChannelModal
         isOpen={Boolean(editingChannel)}
         channel={editingChannel}
+        server={activeServer}
         onClose={() => setEditingChannel(null)}
         onSave={handleSaveEditedChannel}
       />

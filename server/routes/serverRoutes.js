@@ -158,14 +158,20 @@ router.post('/:id/channels', authenticateJWT, (req, res) => {
     id: `ch-${type || 'text'}-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
     name: cleanName,
     type: type === 'voice' ? 'voice' : 'text',
-    topic: topic ? topic.trim() : ''
+    topic: topic ? topic.trim() : '',
+    isPrivate: Boolean(req.body.isPrivate),
+    allowedRoleIds: Array.isArray(req.body.allowedRoleIds) ? req.body.allowedRoleIds : [],
+    allowSendRoleIds: Array.isArray(req.body.allowSendRoleIds) ? req.body.allowSendRoleIds : [],
+    allowConnectRoleIds: Array.isArray(req.body.allowConnectRoleIds) ? req.body.allowConnectRoleIds : [],
+    readOnly: Boolean(req.body.readOnly),
+    hideFromUnauthorized: Boolean(req.body.hideFromUnauthorized)
   };
 
   db.addChannel(server.id, newChannel);
   res.status(201).json({ channel: newChannel });
 });
 
-// Edytuj kanał na serwerze (nazwa, temat)
+// Edytuj kanał na serwerze (nazwa, temat, uprawnienia roli)
 router.patch('/:id/channels/:channelId', authenticateJWT, (req, res) => {
   const server = db.getServerById(req.params.id);
   if (!server) {
@@ -176,7 +182,7 @@ router.patch('/:id/channels/:channelId', authenticateJWT, (req, res) => {
     return res.status(403).json({ error: 'Brak uprawnień do edycji kanałów.' });
   }
 
-  const { name, topic } = req.body;
+  const { name, topic, isPrivate, allowedRoleIds, allowSendRoleIds, allowConnectRoleIds, readOnly, hideFromUnauthorized } = req.body;
   const updates = {};
 
   if (name && name.trim()) {
@@ -188,9 +194,13 @@ router.patch('/:id/channels/:channelId', authenticateJWT, (req, res) => {
     }
   }
 
-  if (topic !== undefined) {
-    updates.topic = topic.trim();
-  }
+  if (topic !== undefined) updates.topic = topic.trim();
+  if (isPrivate !== undefined) updates.isPrivate = Boolean(isPrivate);
+  if (allowedRoleIds !== undefined) updates.allowedRoleIds = Array.isArray(allowedRoleIds) ? allowedRoleIds : [];
+  if (allowSendRoleIds !== undefined) updates.allowSendRoleIds = Array.isArray(allowSendRoleIds) ? allowSendRoleIds : [];
+  if (allowConnectRoleIds !== undefined) updates.allowConnectRoleIds = Array.isArray(allowConnectRoleIds) ? allowConnectRoleIds : [];
+  if (readOnly !== undefined) updates.readOnly = Boolean(readOnly);
+  if (hideFromUnauthorized !== undefined) updates.hideFromUnauthorized = Boolean(hideFromUnauthorized);
 
   const updatedChannel = db.updateChannel(server.id, req.params.channelId, updates);
   if (!updatedChannel) {
@@ -300,6 +310,26 @@ router.patch('/:id/members/:memberId/roles', authenticateJWT, (req, res) => {
   res.json({ success: true, memberId: req.params.memberId, roleIds: updatedRoleIds });
 });
 
+// Zmień kolejność ról (hierarchia)
+router.put('/:id/roles/reorder', authenticateJWT, (req, res) => {
+  const server = db.getServerById(req.params.id);
+  if (!server) {
+    return res.status(404).json({ error: 'Serwer nie istnieje.' });
+  }
+
+  if (!db.hasServerPermission(server, req.user.id, 'MANAGE_ROLES')) {
+    return res.status(403).json({ error: 'Brak uprawnień do zmiany hierarchii ról.' });
+  }
+
+  const { roleIds } = req.body;
+  if (!Array.isArray(roleIds)) {
+    return res.status(400).json({ error: 'Wymagana tablica roleIds.' });
+  }
+
+  const updatedRoles = db.reorderServerRoles(server.id, roleIds);
+  res.json({ roles: updatedRoles });
+});
+
 // Pobierz historię wiadomości na kanale
 router.get('/channels/:channelId/messages', authenticateJWT, (req, res) => {
   const messages = db.getChannelMessages(req.params.channelId, 100);
@@ -330,6 +360,28 @@ router.get('/channels/:channelId/messages', authenticateJWT, (req, res) => {
   });
 
   res.json({ messages: enrichedMessages });
+});
+
+// Usuń wiadomość z kanału tekstowego
+router.delete('/channels/:channelId/messages/:messageId', authenticateJWT, (req, res) => {
+  const { channelId, messageId } = req.params;
+  const messages = db.data.messages || [];
+  const msg = messages.find(m => m.id === messageId);
+
+  if (!msg) {
+    return res.status(404).json({ error: 'Wiadomość nie istnieje.' });
+  }
+
+  const server = db.getServerById(msg.serverId);
+  const isAuthor = msg.userId === req.user.id;
+  const canManage = server ? db.hasServerPermission(server, req.user.id, 'MANAGE_MESSAGES') : false;
+
+  if (!isAuthor && !canManage) {
+    return res.status(403).json({ error: 'Brak uprawnień do usunięcia tej wiadomości.' });
+  }
+
+  const deleted = db.deleteMessage(messageId);
+  res.json({ success: true, messageId, channelId });
 });
 
 // Edytuj dane serwera (właściciel lub MANAGE_SERVER)

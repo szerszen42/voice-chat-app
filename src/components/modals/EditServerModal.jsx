@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Globe, Lock, Shield, Settings, Users, Plus, Trash2, Check, Search, 
-  ChevronRight, Hash, Volume2, Edit2, AlertTriangle, Sparkles 
+  ChevronRight, Hash, Volume2, Edit2, AlertTriangle, Sparkles, ArrowUp, ArrowDown 
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useSocket } from '../../context/SocketContext';
@@ -21,12 +21,17 @@ const AVAILABLE_PERMISSIONS = [
   {
     id: 'MANAGE_ROLES',
     name: '🛡️ Zarządzanie rolami',
-    description: 'Umożliwia tworzenie, edycję i usuwanie ról oraz nadawanie ich członkom.'
+    description: 'Umożliwia tworzenie, edycję, zmianę hierarchii i usuwanie ról.'
   },
   {
     id: 'MANAGE_CHANNELS',
     name: '💬 Zarządzanie kanałami',
-    description: 'Umożliwia dodawanie, edycję oraz usuwanie kanałów tekstowych i głosowych.'
+    description: 'Umożliwia dodawanie, edycję, ustawianie uprawnień oraz usuwanie kanałów.'
+  },
+  {
+    id: 'MANAGE_MESSAGES',
+    name: '🗑️ Zarządzanie wiadomościami',
+    description: 'Umożliwia usuwanie wiadomości innych użytkowników na czacie serwera.'
   },
   {
     id: 'MOVE_MEMBERS',
@@ -93,7 +98,13 @@ export const EditServerModal = ({
   // Stan kanałów
   const [channels, setChannels] = useState([]);
   const [editingChannel, setEditingChannel] = useState(null);
-  const [newChannelForm, setNewChannelForm] = useState({ name: '', type: 'text' });
+  const [newChannelForm, setNewChannelForm] = useState({ 
+    name: '', 
+    type: 'text',
+    isPrivate: false,
+    readOnly: false,
+    allowedRoleIds: []
+  });
   const [showAddChannelForm, setShowAddChannelForm] = useState(false);
 
   // Stan członków
@@ -113,7 +124,7 @@ export const EditServerModal = ({
       setColor(server.color || '#5865f2');
       setIsPublic(Boolean(server.isPublic));
 
-      const serverRoles = server.roles || [];
+      const serverRoles = server.roles ? [...server.roles].sort((a, b) => (b.position || 0) - (a.position || 0)) : [];
       setRoles(serverRoles);
       if (serverRoles.length > 0) {
         setSelectedRoleId(serverRoles[0].id);
@@ -192,7 +203,7 @@ export const EditServerModal = ({
         permissions: ['SEND_MESSAGES', 'CONNECT', 'SPEAK']
       });
       const newRole = res.role;
-      const updatedRoles = [...roles, newRole];
+      const updatedRoles = [...roles, newRole].sort((a, b) => (b.position || 0) - (a.position || 0));
       setRoles(updatedRoles);
       handleSelectRole(newRole);
       setSuccessMsg('Utworzono nową rolę!');
@@ -203,6 +214,34 @@ export const EditServerModal = ({
       setError(err.message || 'Nie udało się utworzyć roli.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Przesuwanie roli w górę / w dół (Hierarchia)
+  const handleMoveRole = async (index, direction) => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= roles.length) return;
+
+    const movingRole = roles[index];
+    const targetRole = roles[targetIndex];
+
+    // Zabezpieczenie: Właściciel zawsze na samej górze, @everyone na samym dole
+    if (movingRole.id === 'role-owner' || targetRole.id === 'role-owner') return;
+    if (movingRole.id === 'role-everyone' || targetRole.id === 'role-everyone') return;
+
+    const newRoles = [...roles];
+    newRoles[index] = targetRole;
+    newRoles[targetIndex] = movingRole;
+
+    setRoles(newRoles);
+
+    try {
+      const roleIds = newRoles.map(r => r.id);
+      await api.reorderServerRoles(server.id, roleIds);
+      if (socket) socket.emit('notify-server-updated', { serverId: server.id });
+      if (onRefreshServer) onRefreshServer(server.id);
+    } catch (err) {
+      setError(err.message || 'Nie udało się zmienić hierarchii ról.');
     }
   };
 
@@ -300,10 +339,13 @@ export const EditServerModal = ({
     try {
       const res = await api.createChannel(server.id, {
         name: newChannelForm.name.trim().toLowerCase().replace(/\s+/g, '-'),
-        type: newChannelForm.type
+        type: newChannelForm.type,
+        isPrivate: newChannelForm.isPrivate,
+        readOnly: newChannelForm.readOnly,
+        allowedRoleIds: newChannelForm.allowedRoleIds
       });
       setChannels(res.channels || []);
-      setNewChannelForm({ name: '', type: 'text' });
+      setNewChannelForm({ name: '', type: 'text', isPrivate: false, readOnly: false, allowedRoleIds: [] });
       setShowAddChannelForm(false);
       setSuccessMsg('Utworzono kanał!');
       setTimeout(() => setSuccessMsg(''), 3000);
@@ -376,7 +418,7 @@ export const EditServerModal = ({
                 <span>{server.name}</span>
                 <span className="text-xs px-2 py-0.5 bg-dark-700 text-dark-300 rounded font-normal">Ustawienia serwera</span>
               </h2>
-              <span className="text-xs text-dark-400">Dostosuj role, uprawnienia, kanały oraz członków</span>
+              <span className="text-xs text-dark-400">Dostosuj hierarchię ról, uprawnienia kanałów i członków</span>
             </div>
           </div>
           <button
@@ -640,40 +682,80 @@ export const EditServerModal = ({
             {/* 2. ZAKŁADKA: ROLE I UPRAWNIENIA (ROLES) */}
             {activeTab === 'roles' && (
               <div className="flex flex-col md:flex-row gap-4 h-full">
-                {/* Lewa kolumna: Lista ról */}
-                <div className="w-full md:w-56 bg-dark-900/60 border border-dark-700 rounded-xl p-2.5 flex flex-col flex-shrink-0">
+                
+                {/* Lewa kolumna: Lista ról wraz z przyciskami hierarchii (⬆️ / ⬇️) */}
+                <div className="w-full md:w-64 bg-dark-900/60 border border-dark-700 rounded-xl p-2.5 flex flex-col flex-shrink-0">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-800">
-                    <span className="text-xs font-bold text-dark-300 uppercase tracking-wider">Role</span>
+                    <div>
+                      <span className="text-xs font-bold text-dark-300 uppercase tracking-wider block">Hierarchia Ról</span>
+                      <span className="text-[10px] text-dark-400">Użyj strzałek ⬆️⬇️ aby zmienić kolejność</span>
+                    </div>
                     <button
                       type="button"
                       onClick={handleCreateRole}
-                      className="px-2 py-1 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold flex items-center space-x-1 cursor-pointer transition-transform active:scale-95"
+                      className="px-2 py-1 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold flex items-center space-x-1 cursor-pointer transition-transform active:scale-95 flex-shrink-0"
                     >
                       <Plus size={13} />
                       <span>Dodaj</span>
                     </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto space-y-1 scrollbar-thin">
-                    {roles.map((r) => {
+                  <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
+                    {roles.map((r, rIdx) => {
                       const isSelected = r.id === selectedRoleId;
+                      const isOwnerRole = r.id === 'role-owner';
+                      const isEveryoneRole = r.id === 'role-everyone';
+                      const canMoveUp = rIdx > 1; // nie można wyżej niż owner na indeksie 0
+                      const canMoveDown = rIdx < roles.length - 2; // nie można niżej niż @everyone
+
                       return (
-                        <button
+                        <div
                           key={r.id}
-                          type="button"
-                          onClick={() => handleSelectRole(r)}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-semibold transition-all group ${
                             isSelected
                               ? 'bg-dark-700 text-white border-l-4 border-brand-500 shadow'
                               : 'text-dark-300 hover:bg-dark-800 hover:text-white'
                           }`}
                         >
-                          <div className="flex items-center space-x-2 truncate">
+                          <div
+                            onClick={() => handleSelectRole(r)}
+                            className="flex items-center space-x-2 truncate flex-1 cursor-pointer"
+                          >
                             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color || '#99aab5' }} />
                             <span className="truncate">{r.name}</span>
+                            {isOwnerRole && <span className="text-[10px]">👑</span>}
                           </div>
-                          {r.id === 'role-owner' && <span className="text-[10px]">👑</span>}
-                        </button>
+
+                          {/* Przyciski przesuwania hierarchii */}
+                          {!isOwnerRole && !isEveryoneRole && (
+                            <div className="flex items-center space-x-0.5 opacity-60 group-hover:opacity-100 flex-shrink-0">
+                              <button
+                                type="button"
+                                disabled={!canMoveUp}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMoveRole(rIdx, 'up');
+                                }}
+                                className={`p-1 rounded hover:bg-dark-600 text-dark-300 hover:text-white transition-colors ${!canMoveUp ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer'}`}
+                                title="Przesuń rolę w górę (wyższy priorytet)"
+                              >
+                                <ArrowUp size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!canMoveDown}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMoveRole(rIdx, 'down');
+                                }}
+                                className={`p-1 rounded hover:bg-dark-600 text-dark-300 hover:text-white transition-colors ${!canMoveDown ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer'}`}
+                                title="Przesuń rolę w dół (niższy priorytet)"
+                              >
+                                <ArrowDown size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -685,7 +767,7 @@ export const EditServerModal = ({
                     <div className="flex items-center justify-between pb-2 border-b border-dark-800">
                       <div>
                         <h4 className="text-xs font-bold text-white">Edycja roli: {roleForm.name}</h4>
-                        <span className="text-[10px] text-dark-400">Dostosuj nazwę, kolor i uprawnienia tej roli</span>
+                        <span className="text-[10px] text-dark-400">Dostosuj nazwę, kolor, grupowanie oraz uprawnienia</span>
                       </div>
                       {!isSystemRole && (
                         <button
@@ -737,6 +819,27 @@ export const EditServerModal = ({
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Przełącznik Grupowania na liście (Hoist) */}
+                    <div 
+                      onClick={() => setRoleForm({ ...roleForm, hoist: !roleForm.hoist })}
+                      className={`p-3 rounded-xl border transition-colors cursor-pointer flex items-center justify-between ${
+                        roleForm.hoist
+                          ? 'border-brand-500/60 bg-brand-500/10 text-white'
+                          : 'border-dark-800 bg-dark-950/60 text-dark-300 hover:border-dark-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-bold text-white">Wyświetlaj tę rolę oddzielnie na liście członków</div>
+                        <div className="text-[10px] text-dark-400 mt-0.5">Tworzy osobną kategorię z nazwą i kolorem roli po prawej stronie czatu</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={roleForm.hoist}
+                        onChange={() => {}}
+                        className="rounded text-brand-500 focus:ring-0 cursor-pointer"
+                      />
                     </div>
 
                     {/* Uprawnienia */}
@@ -798,7 +901,7 @@ export const EditServerModal = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-bold text-white mb-0.5">Kanały serwera</h3>
-                    <p className="text-xs text-dark-400">Zarządzaj kanałami tekstowymi i głosowymi.</p>
+                    <p className="text-xs text-dark-400">Zarządzaj kanałami tekstowymi, głosowymi i ich uprawnieniami.</p>
                   </div>
                   <button
                     type="button"
@@ -812,7 +915,7 @@ export const EditServerModal = ({
 
                 {/* Formularz szybkiego dodawania kanału */}
                 {showAddChannelForm && (
-                  <form onSubmit={handleCreateChannelInside} className="p-3.5 bg-dark-900 border border-brand-500/50 rounded-xl space-y-3 animate-fade-in shadow-lg">
+                  <form onSubmit={handleCreateChannelInside} className="p-4 bg-dark-900 border border-brand-500/50 rounded-xl space-y-3 animate-fade-in shadow-lg">
                     <div className="text-xs font-bold text-white flex items-center space-x-1.5">
                       <Sparkles size={14} className="text-brand-400" />
                       <span>Nowy kanał</span>
@@ -841,6 +944,40 @@ export const EditServerModal = ({
                           <option value="voice">🔊 Kanał głosowy (Głos + Ekran)</option>
                         </select>
                       </div>
+                    </div>
+
+                    {/* Uprawnienia kanału */}
+                    <div className="pt-2 border-t border-dark-800 space-y-2">
+                      <div 
+                        onClick={() => setNewChannelForm({ ...newChannelForm, isPrivate: !newChannelForm.isPrivate })}
+                        className="flex items-center justify-between p-2 bg-dark-950 rounded-lg border border-dark-800 cursor-pointer"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Lock size={14} className="text-amber-400" />
+                          <span className="text-xs text-white font-semibold">Kanał prywatny (tylko wybrane role)</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={newChannelForm.isPrivate}
+                          onChange={() => {}}
+                          className="rounded text-brand-500"
+                        />
+                      </div>
+
+                      {newChannelForm.type === 'text' && (
+                        <div 
+                          onClick={() => setNewChannelForm({ ...newChannelForm, readOnly: !newChannelForm.readOnly })}
+                          className="flex items-center justify-between p-2 bg-dark-950 rounded-lg border border-dark-800 cursor-pointer"
+                        >
+                          <span className="text-xs text-white font-semibold">Kanał tylko do odczytu / Ogłoszenia</span>
+                          <input
+                            type="checkbox"
+                            checked={newChannelForm.readOnly}
+                            onChange={() => {}}
+                            className="rounded text-brand-500"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-end space-x-2 pt-1">
@@ -892,6 +1029,8 @@ export const EditServerModal = ({
                             <div>
                               <div className="text-xs font-bold text-white flex items-center space-x-1.5">
                                 <span>{ch.name}</span>
+                                {ch.isPrivate && <Lock size={12} className="text-amber-400" title="Kanał prywatny" />}
+                                {ch.readOnly && <span className="text-[10px] px-1 bg-dark-800 text-dark-300 rounded">Tylko odczyt</span>}
                                 <span className="text-[10px] text-dark-400 font-normal">
                                   ({ch.type === 'voice' ? 'Głosowy' : 'Tekstowy'})
                                 </span>

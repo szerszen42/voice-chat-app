@@ -74,8 +74,24 @@ export const ChannelSidebar = ({
   const canManageServer = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MANAGE_SERVER');
   const canMoveMembers = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MOVE_MEMBERS');
 
-  const textChannels = (server.channels || []).filter(c => c.type === 'text');
-  const voiceChannels = (server.channels || []).filter(c => c.type === 'voice');
+  const myRoleIds = (server.memberRoles && user?.id && server.memberRoles[user.id]) || [];
+  const isServerAdmin = isOwner || userPermissions.includes('ADMINISTRATOR');
+
+  const checkChannelAccess = (ch) => {
+    if (isServerAdmin) return { canView: true, canJoinOrWrite: true };
+    if (ch.hideFromUnauthorized && ch.allowedRoleIds && ch.allowedRoleIds.length > 0) {
+      const hasAllowedRole = ch.allowedRoleIds.some(rId => myRoleIds.includes(rId));
+      if (!hasAllowedRole) return { canView: false, canJoinOrWrite: false };
+    }
+    if (ch.isPrivate && ch.allowedRoleIds && ch.allowedRoleIds.length > 0) {
+      const hasAllowedRole = ch.allowedRoleIds.some(rId => myRoleIds.includes(rId));
+      return { canView: true, canJoinOrWrite: hasAllowedRole };
+    }
+    return { canView: true, canJoinOrWrite: true };
+  };
+
+  const textChannels = (server.channels || []).filter(c => c.type === 'text' && checkChannelAccess(c).canView);
+  const voiceChannels = (server.channels || []).filter(c => c.type === 'voice' && checkChannelAccess(c).canView);
 
   const copyInvite = () => {
     if (server.inviteCode) {
@@ -280,6 +296,8 @@ export const ChannelSidebar = ({
           <div className="space-y-0.5">
             {textChannels.map((channel) => {
               const isActive = activeChannelId === channel.id;
+              const access = checkChannelAccess(channel);
+
               return (
                 <div
                   key={channel.id}
@@ -292,8 +310,17 @@ export const ChannelSidebar = ({
                   onClick={() => onSelectChannel(channel)}
                 >
                   <div className="flex items-center space-x-2 min-w-0 truncate">
-                    <Hash size={18} className="text-dark-400 group-hover:text-dark-300 flex-shrink-0" />
+                    {channel.isPrivate ? (
+                      <Lock size={16} className="text-amber-400 flex-shrink-0" title="Kanał prywatny" />
+                    ) : (
+                      <Hash size={18} className="text-dark-400 group-hover:text-dark-300 flex-shrink-0" />
+                    )}
                     <span className="truncate text-sm">{channel.name}</span>
+                    {channel.readOnly && (
+                      <span className="text-[9px] px-1 py-0.2 bg-dark-700 text-dark-400 rounded flex-shrink-0" title="Tylko do odczytu">
+                        ogłoszenia
+                      </span>
+                    )}
                   </div>
 
                   {canManageChannels && (
@@ -333,16 +360,23 @@ export const ChannelSidebar = ({
             {voiceChannels.map((channel) => {
               const isConnectedHere = activeVoiceChannel?.channelId === channel.id;
               const channelUsers = voiceStates[channel.id] || [];
+              const access = checkChannelAccess(channel);
+
+              const handleVoiceClick = () => {
+                if (!access.canJoinOrWrite) {
+                  alert(`🔒 Kanał głosowy "${channel.name}" jest prywatny. Dołączyć mogą tylko wyznaczone role lub Właściciel/Admin.`);
+                  return;
+                }
+                joinVoiceChannel(channel, server.id);
+                if (onSelectChannel) onSelectChannel(channel);
+              };
 
               return (
                 <div key={channel.id} className="flex flex-col">
                   {/* Przycisk dołączenia do pokoju */}
                   <div
                     onContextMenu={(e) => handleChannelContextMenu(e, channel)}
-                    onClick={() => {
-                      joinVoiceChannel(channel, server.id);
-                      if (onSelectChannel) onSelectChannel(channel);
-                    }}
+                    onClick={handleVoiceClick}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors text-left group cursor-pointer ${
                       isConnectedHere
                         ? 'bg-emerald-500/15 text-emerald-400 font-medium'
@@ -350,7 +384,11 @@ export const ChannelSidebar = ({
                     }`}
                   >
                     <div className="flex items-center space-x-2 truncate">
-                      <Volume2 size={18} className={isConnectedHere ? 'text-emerald-400' : 'text-dark-400 group-hover:text-dark-300'} />
+                      {channel.isPrivate ? (
+                        <Lock size={16} className={isConnectedHere ? 'text-emerald-400' : 'text-amber-400'} title="Prywatny kanał głosowy" />
+                      ) : (
+                        <Volume2 size={18} className={isConnectedHere ? 'text-emerald-400' : 'text-dark-400 group-hover:text-dark-300'} />
+                      )}
                       <span className="truncate text-sm">{channel.name}</span>
                     </div>
 

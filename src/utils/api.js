@@ -62,7 +62,11 @@ export const api = {
   createServerRole: (serverId, roleData) => request(`/servers/${serverId}/roles`, { method: 'POST', body: JSON.stringify(roleData) }),
   updateServerRole: (serverId, roleId, updates) => request(`/servers/${serverId}/roles/${roleId}`, { method: 'PATCH', body: JSON.stringify(updates) }),
   deleteServerRole: (serverId, roleId) => request(`/servers/${serverId}/roles/${roleId}`, { method: 'DELETE' }),
+  reorderServerRoles: (serverId, roleIds) => request(`/servers/${serverId}/roles/reorder`, { method: 'PUT', body: JSON.stringify({ roleIds }) }),
   setMemberRoles: (serverId, memberId, roleIds) => request(`/servers/${serverId}/members/${memberId}/roles`, { method: 'PATCH', body: JSON.stringify({ roleIds }) }),
+
+  // Messages
+  deleteChannelMessage: (channelId, messageId) => request(`/servers/channels/${channelId}/messages/${messageId}`, { method: 'DELETE' }),
 
   // Direct Messages
   getConversations: () => request('/dm/conversations'),
