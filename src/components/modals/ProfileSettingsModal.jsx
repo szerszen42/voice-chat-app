@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X, User, Mic, MicOff, Headphones, Volume2, Check, Sparkles,
   RefreshCw, Smartphone, Download, Sliders, ShieldCheck, SlidersHorizontal,
-  VolumeX, Activity, Upload, Image as ImageIcon, Trash2, Palette
+  VolumeX, Activity, Upload, Image as ImageIcon, Trash2, Palette, Scissors
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useVoice } from '../../context/VoiceContext';
 import { useSocket } from '../../context/SocketContext';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
 import { UserAvatar } from '../common/UserAvatar';
+import { AvatarCropModal } from './AvatarCropModal';
 
 export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
   const { user, updateProfile } = useAuth();
@@ -53,6 +54,10 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Stan kadrowania i pozycjonowania zdjęcia profilowego
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [rawImageForCrop, setRawImageForCrop] = useState('');
+
   const fileInputRef = useRef(null);
   const sliderTrackRef = useRef(null);
 
@@ -92,51 +97,40 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     { id: 'offline', label: 'Niewidoczny', color: 'bg-neutral-500', desc: 'Wyświetlaj jako offline' },
   ];
 
-  // Obsługa wgrywania pliku graficznego z dysku
+  // Obsługa wgrywania pliku graficznego z dysku - natychmiastowe otwarcie edytora kadrowania
   const handleAvatarFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Plik jest za duży! Wybierz zdjęcie do 8MB.');
+    if (file.size > 12 * 1024 * 1024) {
+      alert('Plik jest za duży! Wybierz zdjęcie do 12MB.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxDim = 320;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        setAvatarUrl(dataUrl);
-      };
-      img.src = event.target.result;
+      const dataUrl = event.target?.result;
+      if (dataUrl) {
+        setRawImageForCrop(dataUrl);
+        setIsCropModalOpen(true);
+      }
     };
     reader.readAsDataURL(file);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleOpenCropExisting = () => {
+    if (!avatarUrl) return;
+    setRawImageForCrop(avatarUrl);
+    setIsCropModalOpen(true);
   };
 
   const handleRemoveAvatar = () => {
     setAvatarUrl('');
+    setRawImageForCrop('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -355,17 +349,30 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   className="hidden"
                 />
 
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="px-4 py-2 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white rounded-lg text-xs font-bold transition-all flex items-center space-x-2 shadow-md cursor-pointer"
                   >
                     <Upload size={14} />
-                    <span>Wgraj plik z dysku / telefonu</span>
+                    <span>{avatarUrl ? 'Zmień zdjęcie...' : 'Wgraj plik z dysku / telefonu'}</span>
                   </button>
-                  <span className="text-[11px] text-dark-400">
-                    JPG, PNG, GIF, WebP (do 8MB)
+
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleOpenCropExisting}
+                      className="px-3.5 py-2 bg-dark-800 hover:bg-dark-700 border border-brand-500/40 text-brand-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 shadow cursor-pointer"
+                      title="Dostosuj kadr, powiększenie i przesuń pozycję zdjęcia"
+                    >
+                      <Scissors size={14} />
+                      <span>Dostosuj pozycję i kadr</span>
+                    </button>
+                  )}
+
+                  <span className="text-[11px] text-dark-400 ml-1">
+                    JPG, PNG, GIF, WebP (do 12MB)
                   </span>
                 </div>
               </div>
@@ -980,6 +987,16 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
           )}
         </div>
       </div>
+
+      {/* Modal kadrowania i pozycjonowania zdjęcia profilowego */}
+      <AvatarCropModal
+        isOpen={isCropModalOpen}
+        imageSrc={rawImageForCrop}
+        onClose={() => setIsCropModalOpen(false)}
+        onSave={(croppedDataUrl) => {
+          setAvatarUrl(croppedDataUrl);
+        }}
+      />
     </div>
   );
 };
