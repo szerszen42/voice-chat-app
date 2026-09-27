@@ -13,7 +13,16 @@ const ICE_SERVERS = {
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.services.mozilla.com' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    }
   ],
   iceCandidatePoolSize: 10
 };
@@ -48,6 +57,7 @@ export const VoiceProvider = ({ children }) => {
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
   const [selectedAudioInput, setSelectedAudioInput] = useState(() => localStorage.getItem('voicechat_audio_input') || 'default');
   const [selectedAudioOutput, setSelectedAudioOutput] = useState(() => localStorage.getItem('voicechat_audio_output') || 'default');
+  const [hasMicPermission, setHasMicPermission] = useState(false);
 
   // Referencje WebRTC i Audio
   const localStreamRef = useRef(null);
@@ -63,13 +73,38 @@ export const VoiceProvider = ({ children }) => {
   const animFrameRef = useRef(null);
   const durationTimerRef = useRef(null);
 
-  // Pobierz listę urządzeń audio
-  const refreshAudioDevices = async () => {
+  // Pobierz listę urządzeń audio z pełnymi etykietami
+  const refreshAudioDevices = async (requestPermissionIfMissing = false) => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setAudioInputDevices(devices.filter(d => d.kind === 'audioinput'));
-      setAudioOutputDevices(devices.filter(d => d.kind === 'audiooutput'));
+      
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      const hasLabels = devices.some(d => d.kind === 'audioinput' && d.label);
+
+      // Jeśli etykiety są puste, spróbuj poprosić o dostęp do mikrofonu, aby odblokować prawdziwe nazwy urządzeń
+      if ((!hasLabels || requestPermissionIfMissing) && navigator.mediaDevices.getUserMedia) {
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setHasMicPermission(true);
+          devices = await navigator.mediaDevices.enumerateDevices();
+          
+          if (!localStreamRef.current) {
+            localStreamRef.current = tempStream;
+            setupAudioAnalyser(tempStream);
+          } else {
+            tempStream.getTracks().forEach(t => t.stop());
+          }
+        } catch (permErr) {
+          console.warn('Odmówiono dostępu do mikrofonu:', permErr);
+        }
+      } else if (hasLabels) {
+        setHasMicPermission(true);
+      }
+
+      const inputs = devices.filter(d => d.kind === 'audioinput');
+      const outputs = devices.filter(d => d.kind === 'audiooutput');
+      setAudioInputDevices(inputs);
+      setAudioOutputDevices(outputs);
     } catch (err) {
       console.warn('Nie udało się pobrać listy urządzeń audio:', err);
     }
@@ -78,16 +113,20 @@ export const VoiceProvider = ({ children }) => {
   useEffect(() => {
     refreshAudioDevices();
     if (navigator.mediaDevices?.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
-      return () => navigator.mediaDevices.removeEventListener('devicechange', refreshAudioDevices);
+      navigator.mediaDevices.addEventListener('devicechange', () => refreshAudioDevices(false));
+      return () => navigator.mediaDevices.removeEventListener('devicechange', () => refreshAudioDevices(false));
     }
   }, []);
 
-  // Pobierz strumień audio z wybranego mikrofonu
+  // Pobierz prawdziwy strumień audio z wybranego mikrofonu
   const getLocalAudioStream = async (overrideDeviceId = null) => {
     const targetDeviceId = overrideDeviceId || selectedAudioInput;
+    
     if (localStreamRef.current && !overrideDeviceId) {
-      return localStreamRef.current;
+      const activeTrack = localStreamRef.current.getAudioTracks()[0];
+      if (activeTrack && activeTrack.readyState === 'live' && activeTrack.enabled !== false) {
+        return localStreamRef.current;
+      }
     }
 
     try {
@@ -97,7 +136,7 @@ export const VoiceProvider = ({ children }) => {
         autoGainControl: true
       };
       if (targetDeviceId && targetDeviceId !== 'default') {
-        audioConstraints.deviceId = { exact: targetDeviceId };
+        audioConstraints.deviceId = { ideal: targetDeviceId };
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -106,24 +145,21 @@ export const VoiceProvider = ({ children }) => {
       });
 
       localStreamRef.current = stream;
+      setHasMicPermission(true);
       setupAudioAnalyser(stream);
-      refreshAudioDevices();
+      await refreshAudioDevices(false);
       return stream;
     } catch (err) {
-      console.warn('Brak dostępu do mikrofonu, tworzenie cichego strumienia zastępczego:', err);
+      console.warn('Próba pobrania wybranego mikrofonu nie powiodła się, próba domyślnego:', err);
       try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        const osc = audioCtx.createOscillator();
-        const dst = audioCtx.createMediaStreamDestination();
-        osc.connect(dst);
-        osc.start();
-        const silentTrack = dst.stream.getAudioTracks()[0];
-        silentTrack.enabled = false;
-        const fakeStream = new MediaStream([silentTrack]);
-        localStreamRef.current = fakeStream;
-        return fakeStream;
-      } catch (e) {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        localStreamRef.current = fallbackStream;
+        setHasMicPermission(true);
+        setupAudioAnalyser(fallbackStream);
+        await refreshAudioDevices(false);
+        return fallbackStream;
+      } catch (err2) {
+        console.error('Brak dostępu do mikrofonu użytkownika:', err2);
         return null;
       }
     }
@@ -134,14 +170,15 @@ export const VoiceProvider = ({ children }) => {
     setSelectedAudioInput(deviceId);
     localStorage.setItem('voicechat_audio_input', deviceId);
 
-    if (localStreamRef.current) {
-      try {
+    try {
+      if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
         localStreamRef.current = null;
+      }
 
-        const newStream = await getLocalAudioStream(deviceId);
+      const newStream = await getLocalAudioStream(deviceId);
+      if (newStream) {
         const newTrack = newStream.getAudioTracks()[0];
-
         if (newTrack) {
           newTrack.enabled = !isMuted;
           peerConnectionsRef.current.forEach((pc) => {
@@ -153,9 +190,9 @@ export const VoiceProvider = ({ children }) => {
             if (sender) sender.replaceTrack(newTrack);
           }
         }
-      } catch (e) {
-        console.error('Błąd zmiany mikrofonu:', e);
       }
+    } catch (e) {
+      console.error('Błąd zmiany mikrofonu:', e);
     }
   };
 
@@ -183,20 +220,29 @@ export const VoiceProvider = ({ children }) => {
     }
   };
 
-  // Analizator głosu (wykrywanie mowy)
+  // Analizator głosu (wykrywanie mowy i miernik poziomu głośności 0-100%)
   const setupAudioAnalyser = (stream) => {
+    if (!stream) return;
     try {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
       if (audioCtxRef.current) {
         try { audioCtxRef.current.close(); } catch (e) {}
       }
+      
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioCtx();
       audioCtxRef.current = audioCtx;
 
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.4;
+      analyser.smoothingTimeConstant = 0.3;
       source.connect(analyser);
       analyserRef.current = analyser;
 
@@ -205,15 +251,24 @@ export const VoiceProvider = ({ children }) => {
 
       const checkSpeaking = () => {
         if (!analyserRef.current) return;
+        
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+
         analyserRef.current.getByteFrequencyData(dataArray);
 
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
         const average = sum / dataArray.length;
-        const normalized = Math.min(100, Math.round((average / 128) * 100));
+        
+        // Czułość paska głośności
+        const normalized = Math.min(100, Math.round((average / 70) * 100));
         setMicVolume(normalized);
 
-        const isCurrentlySpeaking = average > 14 && !isMuted;
+        const isCurrentlySpeaking = average > 10 && !isMuted;
 
         if (isCurrentlySpeaking !== wasSpeaking) {
           wasSpeaking = isCurrentlySpeaking;
@@ -961,6 +1016,8 @@ export const VoiceProvider = ({ children }) => {
       audioOutputDevices,
       selectedAudioInput,
       selectedAudioOutput,
+      hasMicPermission,
+      getLocalAudioStream,
       changeAudioInputDevice,
       changeAudioOutputDevice,
       refreshAudioDevices,

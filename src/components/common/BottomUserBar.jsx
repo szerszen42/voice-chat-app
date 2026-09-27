@@ -61,7 +61,7 @@ export const BottomUserBar = ({ onOpenSettings }) => {
 
   const handleMicContextMenu = (e) => {
     e.preventDefault();
-    refreshAudioDevices();
+    refreshAudioDevices(true);
     setShowMicMenu(prev => !prev);
     setShowOutputMenu(false);
     setShowProfileMenu(false);
@@ -69,7 +69,7 @@ export const BottomUserBar = ({ onOpenSettings }) => {
 
   const handleOutputContextMenu = (e) => {
     e.preventDefault();
-    refreshAudioDevices();
+    refreshAudioDevices(true);
     setShowOutputMenu(prev => !prev);
     setShowMicMenu(false);
     setShowProfileMenu(false);

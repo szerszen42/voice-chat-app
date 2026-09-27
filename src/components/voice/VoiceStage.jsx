@@ -68,6 +68,9 @@ export const VoiceStage = () => {
   useEffect(() => {
     if (videoRef.current && activeStream?.stream) {
       videoRef.current.srcObject = activeStream.stream;
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play().catch(e => console.warn('Video play error:', e));
+      };
       videoRef.current.play().catch(e => console.warn('Video play error:', e));
     }
   }, [activeStream]);

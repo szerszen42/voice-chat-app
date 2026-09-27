@@ -15,6 +15,8 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     audioOutputDevices,
     selectedAudioInput,
     selectedAudioOutput,
+    hasMicPermission,
+    getLocalAudioStream,
     changeAudioInputDevice,
     changeAudioOutputDevice,
     refreshAudioDevices,
@@ -45,7 +47,8 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
 
   useEffect(() => {
     if (isOpen && activeTab === 'voice') {
-      refreshAudioDevices();
+      refreshAudioDevices(true);
+      getLocalAudioStream().catch(() => {});
     }
   }, [isOpen, activeTab]);
 
@@ -321,14 +324,37 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   <p className="text-xs text-dark-300">Wybierz mikrofon, słuchawki i sprawdź jakość dźwięku.</p>
                 </div>
                 <button
-                  onClick={refreshAudioDevices}
-                  className="p-2 bg-dark-900 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors flex items-center space-x-1.5 text-xs"
-                  title="Odśwież listę podłączonych urządzeń"
+                  onClick={async () => {
+                    await getLocalAudioStream();
+                    await refreshAudioDevices(true);
+                  }}
+                  className="p-2 bg-dark-900 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors flex items-center space-x-1.5 text-xs border border-dark-700"
+                  title="Wczytaj i odśwież nazwy podłączonych urządzeń"
                 >
                   <RefreshCw size={14} />
-                  <span>Odśwież</span>
+                  <span>Wykryj urządzenia</span>
                 </button>
               </div>
+
+              {/* Informacja o uprawnieniach mikrofonu */}
+              {!hasMicPermission && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center space-x-2.5 text-xs text-amber-300">
+                    <Mic className="text-amber-400 flex-shrink-0" size={18} />
+                    <span>Przeglądarka potrzebuje zgody na mikrofon, aby wykryć nazwy Twoich urządzeń i odblokować dźwięk.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await getLocalAudioStream();
+                      await refreshAudioDevices(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-dark-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow-md active:scale-95 self-start sm:self-auto"
+                  >
+                    Zezwól na mikrofon
+                  </button>
+                </div>
+              )}
 
               {/* Wybór Mikrofonu i Słuchawek */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -389,21 +415,33 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-2">
                     <Mic size={16} className="text-emerald-400" />
-                    <span>Wskaźnik czułości mikrofonu (Test głosu)</span>
+                    <span>Wskaźnik czułości mikrofonu (Test na żywo)</span>
                   </span>
-                  <span className="text-xs font-mono text-emerald-400 font-bold">{micVolume}%</span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await getLocalAudioStream();
+                        await refreshAudioDevices(true);
+                      }}
+                      className="px-2.5 py-1 bg-dark-800 hover:bg-dark-700 text-emerald-400 hover:text-emerald-300 text-[11px] font-semibold rounded border border-dark-600 transition-colors"
+                    >
+                      Przetestuj teraz
+                    </button>
+                    <span className="text-xs font-mono text-emerald-400 font-bold min-w-[32px] text-right">{micVolume}%</span>
+                  </div>
                 </div>
 
                 {/* Pasek natężenia dźwięku */}
                 <div className="w-full h-4 bg-dark-700 rounded-full overflow-hidden p-0.5 border border-dark-600">
                   <div
                     className="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500 rounded-full transition-all duration-75"
-                    style={{ width: `${Math.max(5, micVolume)}%` }}
+                    style={{ width: `${Math.max(4, micVolume)}%` }}
                   />
                 </div>
 
                 <p className="text-[11px] text-dark-400">
-                  Mów do wybranego mikrofonu — jeśli pasek rośnie w rytm Twojego głosu, urządzenie jest prawidłowo skonfigurowane i gotowe do rozmów.
+                  Mów do mikrofonu — zielono-żółty pasek rośnie w rytm Twojego głosu. Jeśli się nie rusza, kliknij przycisk <b>"Przetestuj teraz"</b> lub <b>"Zezwól na mikrofon"</b> powyżej.
                 </p>
               </div>
 
