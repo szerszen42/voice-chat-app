@@ -20,6 +20,15 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.on('connect', () => {
       console.log('🔌 Połączono z Socket.io:', newSocket.id);
+      newSocket.emit('get-voice-states');
+      if (user?.id) {
+        newSocket.emit('register-user', { userId: user.id });
+      }
+    });
+
+    newSocket.on('reconnect', () => {
+      console.log('🔄 Wznowiono połączenie z Socket.io:', newSocket.id);
+      newSocket.emit('get-voice-states');
       if (user?.id) {
         newSocket.emit('register-user', { userId: user.id });
       }
@@ -35,7 +44,7 @@ export const SocketProvider = ({ children }) => {
     newSocket.on('voice-state-update', ({ channelId, users }) => {
       setVoiceStates(prev => ({
         ...prev,
-        [channelId]: users
+        [channelId]: users || []
       }));
     });
 

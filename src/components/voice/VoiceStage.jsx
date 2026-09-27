@@ -102,6 +102,22 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
     }
   };
 
+  // Lista uczestników kanału głosowego (gwarantuje, że obecny użytkownik zawsze widzi siebie na scenie)
+  const displayParticipants = useMemo(() => {
+    let list = [...voiceUsers];
+    const hasSelf = list.some(p => (p.user?.id || p.id) === user?.id);
+    if (!hasSelf && user) {
+      list.push({
+        user,
+        isMuted,
+        isDeafened,
+        isSpeaking: speakingUsers.has(user.id),
+        channelId: activeVoiceChannel?.channelId
+      });
+    }
+    return list;
+  }, [voiceUsers, user, isMuted, isDeafened, speakingUsers, activeVoiceChannel]);
+
   return (
     <div
       ref={containerRef}
@@ -124,7 +140,7 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
               )}
             </div>
             <div className="text-[10px] text-dark-400">
-              {voiceUsers.length} {voiceUsers.length === 1 ? 'uczestnik' : 'uczestników'} w kanale
+              {displayParticipants.length} {displayParticipants.length === 1 ? 'uczestnik' : 'uczestników'} w kanale
             </div>
           </div>
         </div>
@@ -219,7 +235,7 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
           /* BRAK STREAMU: SIATKA KAFLI UCZESTNIKÓW W STYLU DISCORDA */
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 max-w-4xl w-full">
-              {voiceUsers.map((participant) => {
+              {displayParticipants.map((participant) => {
                 const pUser = participant.user || participant;
                 const isSpeaking = speakingUsers.has(pUser.id);
                 const isCurrent = pUser.id === user?.id;
@@ -286,9 +302,9 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
         )}
 
         {/* DOLNY PASEK MINIATUREK GDY STREAM JEST AKTYWNY */}
-        {activeStream && voiceUsers.length > 0 && (
+        {activeStream && displayParticipants.length > 0 && (
           <div className="h-20 mt-3 flex items-center space-x-2 overflow-x-auto scrollbar-thin">
-            {voiceUsers.map((participant) => {
+            {displayParticipants.map((participant) => {
               const pUser = participant.user || participant;
               const isSpeaking = speakingUsers.has(pUser.id);
 

@@ -9,6 +9,19 @@ export const setupSocketHandlers = (io) => {
   io.on('connection', (socket) => {
     let currentUserId = null;
 
+    const syncVoiceStatesToSocket = (targetSocket) => {
+      voiceRooms.forEach((room, chId) => {
+        const peers = Array.from(room.values());
+        if (peers.length > 0) {
+          targetSocket.emit('voice-state-update', {
+            channelId: chId,
+            serverId: peers[0]?.serverId,
+            users: peers.map(r => r.user)
+          });
+        }
+      });
+    };
+
     // Rejestracja użytkownika w socketach
     socket.on('register-user', ({ userId }) => {
       if (!userId) return;
@@ -31,6 +44,13 @@ export const setupSocketHandlers = (io) => {
         userId,
         status: user ? user.status : 'online'
       });
+
+      // Zsynchronizuj natychmiast stan wszystkich kanałów głosowych z nowym połączeniem
+      syncVoiceStatesToSocket(socket);
+    });
+
+    socket.on('get-voice-states', () => {
+      syncVoiceStatesToSocket(socket);
     });
 
     // Zmiana statusu obecności (online, idle, dnd, offline)
@@ -234,9 +254,13 @@ export const setupSocketHandlers = (io) => {
     });
 
     // --- KANAŁY GŁOSOWE (WebRTC Voice Rooms) ---
-    socket.on('join-voice-channel', ({ channelId, serverId }) => {
-      if (!currentUserId || !channelId) return;
-      const user = db.findUserById(currentUserId);
+    socket.on('join-voice-channel', ({ channelId, serverId, userId, user: clientUser }) => {
+      const uId = currentUserId || userId || socket.userId;
+      if (!uId || !channelId) return;
+      currentUserId = uId;
+      socket.userId = uId;
+
+      const user = db.findUserById(uId) || clientUser;
       if (!user) return;
 
       // Sprawdź uprawnienia do wejścia na kanał głosowy
@@ -245,10 +269,10 @@ export const setupSocketHandlers = (io) => {
         if (server) {
           const ch = (server.channels || []).find(c => c.id === channelId);
           if (ch) {
-            const userRoles = db.getMemberRoles(server, currentUserId);
+            const userRoles = db.getMemberRoles(server, uId);
             const userRoleIds = userRoles.map(r => r.id);
-            const isOwner = server.ownerId === currentUserId;
-            const isAdmin = isOwner || userRoleIds.includes('role-owner') || userRoleIds.includes('role-admin') || db.hasServerPermission(server, currentUserId, 'ADMINISTRATOR');
+            const isOwner = server.ownerId === uId;
+            const isAdmin = isOwner || userRoleIds.includes('role-owner') || userRoleIds.includes('role-admin') || db.hasServerPermission(server, uId, 'ADMINISTRATOR');
 
             if (!isAdmin) {
               if (ch.isPrivate && ch.allowedRoleIds && ch.allowedRoleIds.length > 0) {
@@ -273,7 +297,7 @@ export const setupSocketHandlers = (io) => {
       const safeUser = {
         id: user.id,
         username: user.username,
-        displayName: user.displayName,
+        displayName: user.displayName || user.username,
         avatarColor: user.avatarColor,
         avatarEmoji: user.avatarEmoji,
         avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
@@ -291,10 +315,7 @@ export const setupSocketHandlers = (io) => {
       }
       const room = voiceRooms.get(channelId);
 
-      // Pobierz listę istniejących użytkowników w tym pokoju
-      const existingPeers = Array.from(room.values());
-
-      // Dodaj nowego użytkownika
+      // Dodaj nowego użytkownika do pokoju
       room.set(socket.id, {
         user: safeUser,
         isMuted: false,
@@ -307,23 +328,25 @@ export const setupSocketHandlers = (io) => {
       socket.voiceChannelId = channelId;
       socket.join(`voice:${channelId}`);
 
-      // Zwróć dołączającemu listę użytkowników w pokoju
+      // WAŻNE: Zwróć PEŁNĄ listę użytkowników w pokoju (włącznie z nowo dołączonym),
+      // aby UI miało pełną listę uczestników i wyświetliło kafelek użytkownika na scenie
+      const allRoomPeers = Array.from(room.values());
       socket.emit('voice-room-users', {
         channelId,
-        users: existingPeers
+        users: allRoomPeers
       });
 
-      // Poinformuj innych o nowym uczestniku
+      // Poinformuj innych w pokoju o nowym uczestniku
       socket.to(`voice:${channelId}`).emit('user-joined-voice', {
         channelId,
         user: safeUser
       });
 
-      // Powiadomienie globalne dla UI serwera (żeby w drzewie kanałów było widać kto siedzi)
+      // Powiadomienie globalne dla UI drzewa kanałów
       io.emit('voice-state-update', {
         channelId,
         serverId,
-        users: Array.from(room.values()).map(r => r.user)
+        users: allRoomPeers.map(r => r.user)
       });
     });
 
@@ -341,11 +364,26 @@ export const setupSocketHandlers = (io) => {
     });
 
     socket.on('voice-speaking-state', ({ channelId, isSpeaking }) => {
-      if (!channelId) return;
+      const uId = currentUserId || socket.userId;
+      if (!channelId || !uId) return;
+
+      const room = voiceRooms.get(channelId);
+      if (room && room.has(socket.id)) {
+        const peer = room.get(socket.id);
+        peer.isSpeaking = Boolean(isSpeaking);
+      }
+
       socket.to(`voice:${channelId}`).emit('user-speaking-changed', {
         socketId: socket.id,
-        userId: currentUserId,
-        isSpeaking
+        userId: uId,
+        isSpeaking: Boolean(isSpeaking)
+      });
+
+      // Rozgłoś także do całego serwera dla zielonej obwódki na liście kanałów
+      io.emit('user-speaking-changed', {
+        socketId: socket.id,
+        userId: uId,
+        isSpeaking: Boolean(isSpeaking)
       });
     });
 

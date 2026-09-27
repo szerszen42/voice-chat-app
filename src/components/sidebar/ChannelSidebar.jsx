@@ -356,10 +356,14 @@ export const ChannelSidebar = ({
             )}
           </div>
 
-          <div className="space-y-1">
             {voiceChannels.map((channel) => {
               const isConnectedHere = activeVoiceChannel?.channelId === channel.id;
-              const channelUsers = voiceStates[channel.id] || [];
+              const rawUsers = voiceStates[channel.id] || [];
+              let channelUsers = [...rawUsers];
+              // Jeśli jesteśmy połączeni z tym kanałem, a jeszcze nie ma nas w stanie socketu, dodaj nas natychmiast
+              if (isConnectedHere && user && !channelUsers.some(u => (u.user?.id || u.id) === user.id)) {
+                channelUsers.push(user);
+              }
               const access = checkChannelAccess(channel);
 
               const handleVoiceClick = () => {
@@ -414,23 +418,24 @@ export const ChannelSidebar = ({
                   {channelUsers.length > 0 && (
                     <div className="pl-6 pr-1 py-1 space-y-0.5">
                       {channelUsers.map((u) => {
-                        const isSpeaking = speakingUsers.has(u.id);
+                        const voiceUserObj = u.user || u;
+                        const isSpeaking = speakingUsers.has(voiceUserObj.id);
                         return (
                           <div
-                            key={u.id}
-                            onClick={(e) => handleVoiceUserClick(e, u, channel.id)}
+                            key={voiceUserObj.id || voiceUserObj.socketId}
+                            onClick={(e) => handleVoiceUserClick(e, voiceUserObj, channel.id)}
                             className="flex items-center justify-between py-1 px-1.5 rounded-lg hover:bg-dark-700/70 cursor-pointer text-xs text-dark-300 hover:text-white transition-colors group/user"
                             title="Kliknij LPM dla opcji użytkownika (Przenieś / Profil / DM)"
                           >
                             <div className="flex items-center space-x-2 min-w-0 truncate">
                               <UserAvatar
-                                user={u}
+                                user={voiceUserObj}
                                 size="xs"
                                 showStatus={false}
                                 isSpeaking={isSpeaking}
                               />
                               <span className={`truncate text-xs ${isSpeaking ? 'text-emerald-400 font-semibold' : ''}`}>
-                                {u.displayName || u.username}
+                                {voiceUserObj.displayName || voiceUserObj.username}
                               </span>
                             </div>
 

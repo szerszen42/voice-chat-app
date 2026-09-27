@@ -784,6 +784,28 @@ export const VoiceProvider = ({ children }) => {
       serverId
     });
 
+    const currentUserSafe = {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatarColor: user.avatarColor,
+      avatarEmoji: user.avatarEmoji,
+      avatarUrl: user.avatarUrl || user.avatar || user.avatarImage || null,
+      bannerColor: user.bannerColor || '#5865f2',
+      status: user.status || 'online',
+      socketId: socket.id
+    };
+
+    // Natychmiastowe optymistyczne dodanie siebie do listy uczestników
+    setVoiceUsers([{
+      user: currentUserSafe,
+      isMuted,
+      isDeafened,
+      isSpeaking: false,
+      channelId: channel.id,
+      serverId
+    }]);
+
     // Spróbuj pobrać mikrofon w tle bez blokowania połączenia
     try {
       await getLocalAudioStream();
@@ -793,7 +815,9 @@ export const VoiceProvider = ({ children }) => {
 
     socket.emit('join-voice-channel', {
       channelId: channel.id,
-      serverId
+      serverId,
+      userId: user.id,
+      user: currentUserSafe
     });
   };
 
@@ -1058,17 +1082,22 @@ export const VoiceProvider = ({ children }) => {
     if (!socket) return;
 
     socket.on('voice-room-users', async ({ channelId, users }) => {
-      setVoiceUsers(users);
-      for (const peer of users) {
+      setVoiceUsers(users || []);
+      for (const peer of (users || [])) {
         const peerUser = peer.user || peer;
-        if (peerUser?.socketId && peerUser.socketId !== socket.id) {
-          await createPeerConnection(peerUser.socketId, peerUser, true);
+        const pSocketId = peerUser?.socketId || peer.socketId;
+        const pUserId = peerUser?.id || peer.id;
+        if (pSocketId && pSocketId !== socket.id && pUserId !== user?.id) {
+          await createPeerConnection(pSocketId, peerUser, true);
         }
       }
     });
 
     socket.on('user-joined-voice', ({ user: newUser }) => {
-      setVoiceUsers(prev => [...prev.filter(p => (p.user?.id || p.id) !== newUser.id), { user: newUser }]);
+      setVoiceUsers(prev => {
+        const filtered = prev.filter(p => (p.user?.id || p.id) !== newUser.id);
+        return [...filtered, { user: newUser, channelId: activeVoiceChannelRef.current?.channelId }];
+      });
     });
 
     socket.on('user-left-voice', ({ socketId, userId }) => {
