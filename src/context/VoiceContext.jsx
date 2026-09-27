@@ -522,6 +522,9 @@ export const VoiceProvider = ({ children }) => {
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       let wasSpeaking = false;
 
+      let lastMicVolume = 0;
+      let lastVolumeUpdate = 0;
+
       const checkSpeaking = () => {
         if (!analyserRef.current) return;
         
@@ -537,9 +540,16 @@ export const VoiceProvider = ({ children }) => {
         }
         const average = sum / dataArray.length;
         
-        // Czułość paska głośności
+        // Płynna aktualizacja paska głośności (z ograniczeniem zbędnych re-renderów)
         const normalized = Math.min(100, Math.round((average / 70) * 100));
-        setMicVolume(normalized);
+        const now = performance.now();
+        if (now - lastVolumeUpdate > 60) {
+          if (Math.abs(normalized - lastMicVolume) >= 2 || (normalized === 0 && lastMicVolume !== 0)) {
+            lastMicVolume = normalized;
+            lastVolumeUpdate = now;
+            setMicVolume(normalized);
+          }
+        }
 
         const threshold = isAutoSensitivityRef.current ? 10 : sensitivityThresholdRef.current;
         const isCurrentlySpeaking = average > threshold && !isMutedRef.current && !isMicTestingRef.current;

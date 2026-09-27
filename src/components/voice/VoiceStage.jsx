@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Tv, 
   Mic, 
@@ -41,39 +41,53 @@ export const VoiceStage = ({ onOpenUserProfile }) => {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
 
-  // Lista wszystkich dostępnych streamów ekranu (lokalny + zdalne)
-  const allStreams = [];
-  if (isScreenSharing && localScreenStream) {
-    allStreams.push({
-      id: 'local',
-      user,
-      stream: localScreenStream,
-      isLocal: true
-    });
-  }
-  remoteScreenStreams.forEach((val, socketId) => {
-    if (val.stream) {
-      allStreams.push({
-        id: socketId,
-        user: val.user,
-        stream: val.stream,
-        isLocal: false
+  // Lista wszystkich dostępnych streamów ekranu (lokalny + zdalne) - memoizowana
+  const allStreams = useMemo(() => {
+    const list = [];
+    if (isScreenSharing && localScreenStream) {
+      list.push({
+        id: 'local',
+        user,
+        stream: localScreenStream,
+        isLocal: true
       });
     }
-  });
+    remoteScreenStreams.forEach((val, socketId) => {
+      if (val?.stream) {
+        list.push({
+          id: socketId,
+          user: val.user,
+          stream: val.stream,
+          isLocal: false
+        });
+      }
+    });
+    return list;
+  }, [isScreenSharing, localScreenStream, remoteScreenStreams, user]);
 
   // Ustawienie aktywnego streamu do wyświetlania w głównym oknie
-  const activeStream = allStreams.find(s => s.id === selectedStreamId) || allStreams[0];
+  const activeStream = useMemo(() => {
+    return allStreams.find(s => s.id === selectedStreamId) || allStreams[0] || null;
+  }, [allStreams, selectedStreamId]);
 
   useEffect(() => {
-    if (videoRef.current && activeStream?.stream) {
-      videoRef.current.srcObject = activeStream.stream;
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current?.play().catch(e => console.warn('Video play error:', e));
-      };
-      videoRef.current.play().catch(e => console.warn('Video play error:', e));
+    const videoEl = videoRef.current;
+    if (!videoEl || !activeStream?.stream) return;
+
+    // Przypisuj srcObject TYLKO wtedy, gdy stream faktycznie uległ zmianie (zapobiega czarnemu ekranowi co 1s)
+    if (videoEl.srcObject !== activeStream.stream) {
+      videoEl.srcObject = activeStream.stream;
     }
-  }, [activeStream]);
+
+    const playPromise = videoEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        if (err.name !== 'AbortError') {
+          console.warn('Video play error:', err);
+        }
+      });
+    }
+  }, [activeStream?.stream]);
 
   if (!activeVoiceChannel) return null;
 

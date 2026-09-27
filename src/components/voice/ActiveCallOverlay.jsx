@@ -43,12 +43,20 @@ export const ActiveCallOverlay = () => {
   const isViewingRemote = !!directRemoteScreenStream;
 
   useEffect(() => {
-    if (videoRef.current && activeStream) {
-      videoRef.current.srcObject = activeStream;
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current?.play().catch(e => console.warn('Video play error:', e));
-      };
-      videoRef.current.play().catch(e => console.warn('Video play error:', e));
+    const videoEl = videoRef.current;
+    if (!videoEl || !activeStream) return;
+
+    if (videoEl.srcObject !== activeStream) {
+      videoEl.srcObject = activeStream;
+    }
+
+    const playPromise = videoEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        if (err.name !== 'AbortError') {
+          console.warn('Video play error:', err);
+        }
+      });
     }
   }, [activeStream]);
 
