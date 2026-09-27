@@ -59,11 +59,17 @@ export const VoiceProvider = ({ children }) => {
   const [selectedAudioOutput, setSelectedAudioOutput] = useState(() => localStorage.getItem('voicechat_audio_output') || 'default');
   const [hasMicPermission, setHasMicPermission] = useState(false);
 
+  // Test Mikrofonu (Odsłuch własnego głosu) i Poziomy Głośności
+  const [isMicTesting, setIsMicTesting] = useState(false);
+  const [inputVolume, setInputVolume] = useState(() => Number(localStorage.getItem('voicechat_input_vol')) || 100);
+  const [outputVolume, setOutputVolume] = useState(() => Number(localStorage.getItem('voicechat_output_vol')) || 100);
+
   // Referencje WebRTC i Audio
   const localStreamRef = useRef(null);
   const localScreenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // socketId -> RTCPeerConnection
   const audioElementsRef = useRef(new Map()); // socketId -> HTMLAudioElement
+  const loopbackAudioElementRef = useRef(null); // odsłuch samego siebie podczas testu
   const pendingCandidatesRef = useRef(new Map()); // socketId -> Array<RTCIceCandidateInit>
   const directPeerRef = useRef(null);
   const directAudioRef = useRef(null);
@@ -217,6 +223,113 @@ export const VoiceProvider = ({ children }) => {
       } catch (err) {
         console.warn('SinkId error:', err);
       }
+    }
+
+    if (loopbackAudioElementRef.current && typeof loopbackAudioElementRef.current.setSinkId === 'function') {
+      try {
+        await loopbackAudioElementRef.current.setSinkId(deviceId === 'default' ? '' : deviceId);
+      } catch (err) {
+        console.warn('SinkId error:', err);
+      }
+    }
+  };
+
+  // Zmiana głośności wejściowej mikrofonu (0 - 200%)
+  const changeInputVolume = (val) => {
+    const num = Math.max(0, Math.min(200, Number(val)));
+    setInputVolume(num);
+    localStorage.setItem('voicechat_input_vol', num);
+    if (loopbackAudioElementRef.current && isMicTesting) {
+      loopbackAudioElementRef.current.volume = Math.min(1, (outputVolume / 100) * (num / 100));
+    }
+  };
+
+  // Zmiana głośności wyjściowej słuchawek / głośników (0 - 200%)
+  const changeOutputVolume = (val) => {
+    const num = Math.max(0, Math.min(200, Number(val)));
+    setOutputVolume(num);
+    localStorage.setItem('voicechat_output_vol', num);
+
+    audioElementsRef.current.forEach((audio) => {
+      audio.volume = Math.min(1, num / 100);
+    });
+    if (directAudioRef.current) {
+      directAudioRef.current.volume = Math.min(1, num / 100);
+    }
+    if (loopbackAudioElementRef.current && isMicTesting) {
+      loopbackAudioElementRef.current.volume = Math.min(1, (num / 100) * (inputVolume / 100));
+    }
+  };
+
+  // Rozpocznij test mikrofonu (odsłuch samego siebie w słuchawkach + tymczasowe wyciszenie dla innych)
+  const startMicTest = async () => {
+    try {
+      const stream = await getLocalAudioStream();
+      if (!stream) {
+        alert('Nie udało się uzyskać dostępu do mikrofonu.');
+        return;
+      }
+
+      setIsMicTesting(true);
+
+      // 1. Wycisz wysyłanie audio do innych na czas testu
+      peerConnectionsRef.current.forEach((pc) => {
+        const senders = pc.getSenders().filter(s => s.track?.kind === 'audio');
+        senders.forEach(s => {
+          if (s.track) s.track.enabled = false;
+        });
+      });
+      if (directPeerRef.current) {
+        const senders = directPeerRef.current.getSenders().filter(s => s.track?.kind === 'audio');
+        senders.forEach(s => {
+          if (s.track) s.track.enabled = false;
+        });
+      }
+
+      // 2. Skonfiguruj loopback audio, aby słyszeć samego siebie w słuchawkach
+      if (!loopbackAudioElementRef.current) {
+        const audio = new Audio();
+        audio.autoplay = true;
+        audio.playsInline = true;
+        loopbackAudioElementRef.current = audio;
+      }
+
+      const audio = loopbackAudioElementRef.current;
+      audio.srcObject = stream;
+      audio.volume = Math.min(1, (outputVolume / 100) * (inputVolume / 100));
+      if (typeof audio.setSinkId === 'function' && selectedAudioOutput !== 'default') {
+        audio.setSinkId(selectedAudioOutput).catch(() => {});
+      }
+      await audio.play();
+    } catch (err) {
+      console.warn('Błąd uruchamiania testu mikrofonu:', err);
+      setIsMicTesting(false);
+    }
+  };
+
+  // Zakończ test mikrofonu
+  const stopMicTest = () => {
+    setIsMicTesting(false);
+
+    // 1. Zatrzymaj odsłuch własnego głosu
+    if (loopbackAudioElementRef.current) {
+      loopbackAudioElementRef.current.pause();
+      loopbackAudioElementRef.current.srcObject = null;
+    }
+
+    // 2. Przywróć wysyłanie mikrofonu do rozmówców
+    const shouldEnable = !isMuted;
+    peerConnectionsRef.current.forEach((pc) => {
+      const senders = pc.getSenders().filter(s => s.track?.kind === 'audio');
+      senders.forEach(s => {
+        if (s.track) s.track.enabled = shouldEnable;
+      });
+    });
+    if (directPeerRef.current) {
+      const senders = directPeerRef.current.getSenders().filter(s => s.track?.kind === 'audio');
+      senders.forEach(s => {
+        if (s.track) s.track.enabled = shouldEnable;
+      });
     }
   };
 
@@ -1022,6 +1135,13 @@ export const VoiceProvider = ({ children }) => {
       changeAudioOutputDevice,
       refreshAudioDevices,
       playTestSound,
+      isMicTesting,
+      inputVolume,
+      outputVolume,
+      startMicTest,
+      stopMicTest,
+      changeInputVolume,
+      changeOutputVolume,
       isScreenSharing,
       localScreenStream,
       remoteScreenStreams,

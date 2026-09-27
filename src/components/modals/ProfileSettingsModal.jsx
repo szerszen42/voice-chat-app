@@ -20,7 +20,14 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     changeAudioInputDevice,
     changeAudioOutputDevice,
     refreshAudioDevices,
-    playTestSound
+    playTestSound,
+    isMicTesting,
+    inputVolume,
+    outputVolume,
+    startMicTest,
+    stopMicTest,
+    changeInputVolume,
+    changeOutputVolume
   } = useVoice();
   const { socket } = useSocket();
 
@@ -49,8 +56,17 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     if (isOpen && activeTab === 'voice') {
       refreshAudioDevices(true);
       getLocalAudioStream().catch(() => {});
+    } else {
+      if (isMicTesting) {
+        stopMicTest();
+      }
     }
-  }, [isOpen, activeTab]);
+    return () => {
+      if (isMicTesting) {
+        stopMicTest();
+      }
+    };
+  }, [isOpen, activeTab, isMicTesting]);
 
   if (!isOpen || !user) return null;
 
@@ -317,11 +333,11 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
               </div>
             </form>
           ) : activeTab === 'voice' ? (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-1">Ustawienia głosu i audio</h3>
-                  <p className="text-xs text-dark-300">Wybierz mikrofon, słuchawki i sprawdź jakość dźwięku.</p>
+                  <h3 className="text-xl font-bold text-white mb-0.5">Ustawienia głosu</h3>
+                  <p className="text-xs text-dark-300">Dostosuj urządzenia, głośność oraz przetestuj swój mikrofon.</p>
                 </div>
                 <button
                   onClick={async () => {
@@ -336,12 +352,12 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 </button>
               </div>
 
-              {/* Informacja o uprawnieniach mikrofonu */}
+              {/* Informacja o braku uprawnień */}
               {!hasMicPermission && (
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center space-x-2.5 text-xs text-amber-300">
                     <Mic className="text-amber-400 flex-shrink-0" size={18} />
-                    <span>Przeglądarka potrzebuje zgody na mikrofon, aby wykryć nazwy Twoich urządzeń i odblokować dźwięk.</span>
+                    <span>Przeglądarka potrzebuje zgody na mikrofon, aby wykryć nazwy urządzeń i odblokować odsłuch.</span>
                   </div>
                   <button
                     type="button"
@@ -356,103 +372,161 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 </div>
               )}
 
-              {/* Wybór Mikrofonu i Słuchawek */}
+              {/* Wybór Mikrofonu i Słuchawek + Suwaki Głośności (Styl Discord) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 1. Urządzenie Wejściowe (Mikrofon) */}
-                <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-2">
-                  <label className="block text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-1.5 text-brand-400">
-                    <Mic size={16} />
-                    <span>Urządzenie wejściowe (Mikrofon)</span>
-                  </label>
-                  <select
-                    value={selectedAudioInput}
-                    onChange={(e) => changeAudioInputDevice(e.target.value)}
-                    className="w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    <option value="default">Domyślny mikrofon systemu</option>
-                    {audioInputDevices.map((device, idx) => (
-                      <option key={device.deviceId || idx} value={device.deviceId}>
-                        {device.label || `Mikrofon ${idx + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[11px] text-dark-400 block">
-                    Możesz go również szybko zmienić, klikając <b>prawym przyciskiem myszy</b> na ikonę mikrofonu na dolnym pasku.
-                  </span>
-                </div>
-
-                {/* 2. Urządzenie Wyjściowe (Słuchawki / Głośniki) */}
-                <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-2">
-                  <label className="block text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-1.5 text-emerald-400">
-                    <Headphones size={16} />
-                    <span>Urządzenie wyjściowe (Słuchawki)</span>
-                  </label>
-                  <select
-                    value={selectedAudioOutput}
-                    onChange={(e) => changeAudioOutputDevice(e.target.value)}
-                    className="w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="default">Domyślne słuchawki / głośniki</option>
-                    {audioOutputDevices.map((device, idx) => (
-                      <option key={device.deviceId || idx} value={device.deviceId}>
-                        {device.label || `Głośnik / Słuchawki ${idx + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={playTestSound}
-                    className="w-full py-1.5 bg-dark-700 hover:bg-dark-600 text-emerald-400 text-xs font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition-colors border border-dark-600"
-                  >
-                    <Volume2 size={14} />
-                    <span>Odtwórz dźwięk testowy</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Wizualny test poziomu mikrofonu */}
-              <div className="bg-dark-900 border border-dark-700 rounded-xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-2">
-                    <Mic size={16} className="text-emerald-400" />
-                    <span>Wskaźnik czułości mikrofonu (Test na żywo)</span>
-                  </span>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await getLocalAudioStream();
-                        await refreshAudioDevices(true);
-                      }}
-                      className="px-2.5 py-1 bg-dark-800 hover:bg-dark-700 text-emerald-400 hover:text-emerald-300 text-[11px] font-semibold rounded border border-dark-600 transition-colors"
+                {/* 1. MIKROFON */}
+                <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1.5 flex items-center space-x-1.5">
+                      <Mic size={14} className="text-brand-400" />
+                      <span>Mikrofon</span>
+                    </label>
+                    <select
+                      value={selectedAudioInput}
+                      onChange={(e) => changeAudioInputDevice(e.target.value)}
+                      className="w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
                     >
-                      Przetestuj teraz
-                    </button>
-                    <span className="text-xs font-mono text-emerald-400 font-bold min-w-[32px] text-right">{micVolume}%</span>
+                      <option value="default">Domyślny mikrofon systemu</option>
+                      {audioInputDevices.map((device, idx) => (
+                        <option key={device.deviceId || idx} value={device.deviceId}>
+                          {device.label || `Mikrofon ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Suwak Głośności Mikrofonu */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Głośność mikrofonu</span>
+                      <span className="font-mono text-brand-400 font-bold text-xs">{inputVolume}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      value={inputVolume}
+                      onChange={(e) => changeInputVolume(e.target.value)}
+                      className="w-full accent-brand-500 h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer"
+                    />
                   </div>
                 </div>
 
-                {/* Pasek natężenia dźwięku */}
-                <div className="w-full h-4 bg-dark-700 rounded-full overflow-hidden p-0.5 border border-dark-600">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500 rounded-full transition-all duration-75"
-                    style={{ width: `${Math.max(4, micVolume)}%` }}
-                  />
+                {/* 2. MÓWCA / SŁUCHAWKI */}
+                <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1.5 flex items-center space-x-1.5">
+                      <Headphones size={14} className="text-emerald-400" />
+                      <span>Mówca (Słuchawki / Głośniki)</span>
+                    </label>
+                    <select
+                      value={selectedAudioOutput}
+                      onChange={(e) => changeAudioOutputDevice(e.target.value)}
+                      className="w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="default">Domyślne słuchawki / głośniki</option>
+                      {audioOutputDevices.map((device, idx) => (
+                        <option key={device.deviceId || idx} value={device.deviceId}>
+                          {device.label || `Głośnik / Słuchawki ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Suwak Głośności Słuchawek */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Głośność głośników</span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={playTestSound}
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold flex items-center space-x-1"
+                        >
+                          <Volume2 size={12} />
+                          <span>Dźwięk testowy</span>
+                        </button>
+                        <span className="font-mono text-emerald-400 font-bold text-xs">{outputVolume}%</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      value={outputVolume}
+                      onChange={(e) => changeOutputVolume(e.target.value)}
+                      className="w-full accent-emerald-500 h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SEKCJA TESTU MIKROFONU (STYL DISCORDA) */}
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-2">
+                    <Sparkles size={15} className="text-brand-400" />
+                    <span>Test mikrofonu (Odsłuch na żywo)</span>
+                  </span>
+                  <span className="text-xs font-mono font-bold text-brand-400">{micVolume}%</span>
                 </div>
 
-                <p className="text-[11px] text-dark-400">
-                  Mów do mikrofonu — zielono-żółty pasek rośnie w rytm Twojego głosu. Jeśli się nie rusza, kliknij przycisk <b>"Przetestuj teraz"</b> lub <b>"Zezwól na mikrofon"</b> powyżej.
+                <p className="text-[11px] text-dark-300">
+                  Kliknij przycisk poniżej i powiedz coś. <b>Usłyszysz swój własny głos w słuchawkach</b>, aby sprawdzić jakość. Na czas testu Twój mikrofon jest <b>wyciszony dla innych osób</b> na kanale i PV.
                 </p>
+
+                {/* Przycisk Testu + Pasek Segmentowy (Equalizer / VU Meter jak na Discordzie) */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={isMicTesting ? stopMicTest : startMicTest}
+                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-lg ${
+                      isMicTesting
+                        ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-red-600/30'
+                        : 'bg-brand-500 hover:bg-brand-600 text-white shadow-brand-500/30 active:scale-95'
+                    }`}
+                  >
+                    {isMicTesting ? <MicOff size={15} /> : <Mic size={15} />}
+                    <span>{isMicTesting ? 'Zatrzymaj test' : 'Test mikrofonu'}</span>
+                  </button>
+
+                  {/* Pasek segmentowy z pionowych kresek */}
+                  <div className="flex-1 flex items-center space-x-1 bg-dark-950/80 p-2 rounded-xl border border-dark-700/80 h-10 overflow-hidden">
+                    {Array.from({ length: 36 }).map((_, idx) => {
+                      const threshold = (idx / 36) * 100;
+                      const isActive = micVolume >= threshold;
+                      let activeColor = 'bg-emerald-500 shadow-sm shadow-emerald-500/50';
+                      if (idx >= 24 && idx < 30) activeColor = 'bg-yellow-400 shadow-sm shadow-yellow-400/50';
+                      else if (idx >= 30) activeColor = 'bg-red-500 shadow-sm shadow-red-500/50';
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex-1 h-full rounded-[2px] transition-all duration-75 ${
+                            isActive ? activeColor : 'bg-dark-800'
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {isMicTesting && (
+                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center space-x-2 text-xs text-emerald-400 font-semibold animate-fade-in">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                    <span>Odsłuch jest aktywny: mówisz do mikrofonu i słyszysz siebie w słuchawkach! (Inni w tym czasie Cię nie słyszą)</span>
+                  </div>
+                )}
               </div>
 
               {/* Informacje o technologii */}
-              <div className="bg-dark-900/60 border border-dark-700 rounded-xl p-4 text-xs text-dark-300 space-y-2">
+              <div className="bg-dark-900/60 border border-dark-700 rounded-xl p-4 text-xs text-dark-300 space-y-1.5">
                 <div className="font-semibold text-white flex items-center space-x-2">
-                  <Sparkles size={16} className="text-brand-500" />
-                  <span>Jakość dźwięku i WebRTC</span>
+                  <Sparkles size={14} className="text-brand-500" />
+                  <span>Jakość dźwięku Opus i serwery przekaźnikowe TURN</span>
                 </div>
-                <p>
-                  Transmisja wykorzystuje kodek <strong>Opus</strong> z aktywną redukcją echa (Echo Cancellation), automatyczną regulacją wzmocnienia (AGC) i tłumieniem hałasu tła (Noise Suppression).
+                <p className="text-[11px]">
+                  Transmisja wykorzystuje kodek <strong>Opus</strong> z aktywną redukcją echa, automatyczną regulacją wzmocnienia oraz darmowymi serwerami <strong>TURN (OpenRelay)</strong> omijającymi zapory routerów.
                 </p>
               </div>
             </div>
