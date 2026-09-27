@@ -59,6 +59,28 @@ export const VoiceProvider = ({ children }) => {
   const [selectedAudioOutput, setSelectedAudioOutput] = useState(() => localStorage.getItem('voicechat_audio_output') || 'default');
   const [hasMicPermission, setHasMicPermission] = useState(false);
 
+  // Ustawienia przetwarzania dźwięku i bramki szumów
+  const [noiseSuppression, setNoiseSuppression] = useState(() => {
+    const val = localStorage.getItem('voicechat_noise_suppression');
+    return val !== null ? val === 'true' : false; // domyślnie wyłączone, aby mikrofon nie był stłumiony/obcięty
+  });
+  const [echoCancellation, setEchoCancellation] = useState(() => {
+    const val = localStorage.getItem('voicechat_echo_cancellation');
+    return val !== null ? val === 'true' : true;
+  });
+  const [autoGainControl, setAutoGainControl] = useState(() => {
+    const val = localStorage.getItem('voicechat_auto_gain');
+    return val !== null ? val === 'true' : true;
+  });
+  const [isAutoSensitivity, setIsAutoSensitivity] = useState(() => {
+    const val = localStorage.getItem('voicechat_auto_sens');
+    return val !== null ? val === 'true' : true;
+  });
+  const [sensitivityThreshold, setSensitivityThreshold] = useState(() => {
+    const val = localStorage.getItem('voicechat_sens_threshold');
+    return val !== null ? Number(val) : 15;
+  });
+
   // Test Mikrofonu (Odsłuch własnego głosu) i Poziomy Głośności
   const [isMicTesting, setIsMicTesting] = useState(false);
   const [inputVolume, setInputVolume] = useState(() => Number(localStorage.getItem('voicechat_input_vol')) || 100);
@@ -70,6 +92,9 @@ export const VoiceProvider = ({ children }) => {
   const peerConnectionsRef = useRef(new Map()); // socketId -> RTCPeerConnection
   const audioElementsRef = useRef(new Map()); // socketId -> HTMLAudioElement
   const loopbackAudioElementRef = useRef(null); // odsłuch samego siebie podczas testu
+  const loopbackGainNodeRef = useRef(null);
+  const loopbackAudioCtxRef = useRef(null);
+  const loopbackSourceRef = useRef(null);
   const pendingCandidatesRef = useRef(new Map()); // socketId -> Array<RTCIceCandidateInit>
   const directPeerRef = useRef(null);
   const directAudioRef = useRef(null);
@@ -78,6 +103,33 @@ export const VoiceProvider = ({ children }) => {
   const audioCtxRef = useRef(null);
   const animFrameRef = useRef(null);
   const durationTimerRef = useRef(null);
+
+  // Synchronizacja referencji dla analizatora i pętli audio
+  const noiseSuppressionRef = useRef(noiseSuppression);
+  const echoCancellationRef = useRef(echoCancellation);
+  const autoGainControlRef = useRef(autoGainControl);
+  const isAutoSensitivityRef = useRef(isAutoSensitivity);
+  const sensitivityThresholdRef = useRef(sensitivityThreshold);
+  const isMutedRef = useRef(isMuted);
+  const activeVoiceChannelRef = useRef(activeVoiceChannel);
+  const socketRef = useRef(socket);
+  const userRef = useRef(user);
+  const isMicTestingRef = useRef(isMicTesting);
+  const inputVolumeRef = useRef(inputVolume);
+  const outputVolumeRef = useRef(outputVolume);
+
+  useEffect(() => { noiseSuppressionRef.current = noiseSuppression; }, [noiseSuppression]);
+  useEffect(() => { echoCancellationRef.current = echoCancellation; }, [echoCancellation]);
+  useEffect(() => { autoGainControlRef.current = autoGainControl; }, [autoGainControl]);
+  useEffect(() => { isAutoSensitivityRef.current = isAutoSensitivity; }, [isAutoSensitivity]);
+  useEffect(() => { sensitivityThresholdRef.current = sensitivityThreshold; }, [sensitivityThreshold]);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { activeVoiceChannelRef.current = activeVoiceChannel; }, [activeVoiceChannel]);
+  useEffect(() => { socketRef.current = socket; }, [socket]);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { isMicTestingRef.current = isMicTesting; }, [isMicTesting]);
+  useEffect(() => { inputVolumeRef.current = inputVolume; }, [inputVolume]);
+  useEffect(() => { outputVolumeRef.current = outputVolume; }, [outputVolume]);
 
   // Pobierz listę urządzeń audio z pełnymi etykietami
   const refreshAudioDevices = async (requestPermissionIfMissing = false) => {
@@ -90,7 +142,13 @@ export const VoiceProvider = ({ children }) => {
       // Jeśli etykiety są puste, spróbuj poprosić o dostęp do mikrofonu, aby odblokować prawdziwe nazwy urządzeń
       if ((!hasLabels || requestPermissionIfMissing) && navigator.mediaDevices.getUserMedia) {
         try {
-          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const tempStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: echoCancellationRef.current,
+              noiseSuppression: noiseSuppressionRef.current,
+              autoGainControl: autoGainControlRef.current
+            }
+          });
           setHasMicPermission(true);
           devices = await navigator.mediaDevices.enumerateDevices();
           
@@ -124,11 +182,11 @@ export const VoiceProvider = ({ children }) => {
     }
   }, []);
 
-  // Pobierz prawdziwy strumień audio z wybranego mikrofonu
-  const getLocalAudioStream = async (overrideDeviceId = null) => {
+  // Pobierz prawdziwy strumień audio z wybranego mikrofonu z aktualnymi ustawieniami
+  const getLocalAudioStream = async (overrideDeviceId = null, forceNew = false) => {
     const targetDeviceId = overrideDeviceId || selectedAudioInput;
     
-    if (localStreamRef.current && !overrideDeviceId) {
+    if (localStreamRef.current && !overrideDeviceId && !forceNew) {
       const activeTrack = localStreamRef.current.getAudioTracks()[0];
       if (activeTrack && activeTrack.readyState === 'live' && activeTrack.enabled !== false) {
         return localStreamRef.current;
@@ -137,9 +195,9 @@ export const VoiceProvider = ({ children }) => {
 
     try {
       const audioConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+        echoCancellation: echoCancellationRef.current,
+        noiseSuppression: noiseSuppressionRef.current,
+        autoGainControl: autoGainControlRef.current
       };
       if (targetDeviceId && targetDeviceId !== 'default') {
         audioConstraints.deviceId = { ideal: targetDeviceId };
@@ -171,6 +229,84 @@ export const VoiceProvider = ({ children }) => {
     }
   };
 
+  // Zmiana ustawień przetwarzania dźwięku (tłumienie hałasu, echo, wzmocnienie, czułość bramki)
+  const updateAudioProcessingSettings = async (settings) => {
+    let shouldUpdateHardware = false;
+
+    if (settings.noiseSuppression !== undefined) {
+      setNoiseSuppression(settings.noiseSuppression);
+      noiseSuppressionRef.current = settings.noiseSuppression;
+      localStorage.setItem('voicechat_noise_suppression', String(settings.noiseSuppression));
+      shouldUpdateHardware = true;
+    }
+    if (settings.echoCancellation !== undefined) {
+      setEchoCancellation(settings.echoCancellation);
+      echoCancellationRef.current = settings.echoCancellation;
+      localStorage.setItem('voicechat_echo_cancellation', String(settings.echoCancellation));
+      shouldUpdateHardware = true;
+    }
+    if (settings.autoGainControl !== undefined) {
+      setAutoGainControl(settings.autoGainControl);
+      autoGainControlRef.current = settings.autoGainControl;
+      localStorage.setItem('voicechat_auto_gain', String(settings.autoGainControl));
+      shouldUpdateHardware = true;
+    }
+    if (settings.isAutoSensitivity !== undefined) {
+      setIsAutoSensitivity(settings.isAutoSensitivity);
+      isAutoSensitivityRef.current = settings.isAutoSensitivity;
+      localStorage.setItem('voicechat_auto_sens', String(settings.isAutoSensitivity));
+    }
+    if (settings.sensitivityThreshold !== undefined) {
+      const num = Number(settings.sensitivityThreshold);
+      setSensitivityThreshold(num);
+      sensitivityThresholdRef.current = num;
+      localStorage.setItem('voicechat_sens_threshold', String(num));
+    }
+
+    // Zaaplikuj zmiany do aktywnego strumienia i WebRTC
+    if (shouldUpdateHardware && localStreamRef.current) {
+      const activeTrack = localStreamRef.current.getAudioTracks()[0];
+      let appliedDirectly = false;
+
+      if (activeTrack && typeof activeTrack.applyConstraints === 'function') {
+        try {
+          await activeTrack.applyConstraints({
+            noiseSuppression: noiseSuppressionRef.current,
+            echoCancellation: echoCancellationRef.current,
+            autoGainControl: autoGainControlRef.current
+          });
+          appliedDirectly = true;
+        } catch (err) {
+          console.warn('applyConstraints nie powiodło się, pobieram nowy strumień:', err);
+        }
+      }
+
+      if (!appliedDirectly) {
+        try {
+          localStreamRef.current.getTracks().forEach(t => t.stop());
+          localStreamRef.current = null;
+          const newStream = await getLocalAudioStream(selectedAudioInput, true);
+          if (newStream) {
+            const newTrack = newStream.getAudioTracks()[0];
+            if (newTrack) {
+              newTrack.enabled = !isMutedRef.current && !isMicTestingRef.current;
+              peerConnectionsRef.current.forEach((pc) => {
+                const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+                if (sender) sender.replaceTrack(newTrack);
+              });
+              if (directPeerRef.current) {
+                const sender = directPeerRef.current.getSenders().find(s => s.track?.kind === 'audio');
+                if (sender) sender.replaceTrack(newTrack);
+              }
+            }
+          }
+        } catch (err2) {
+          console.warn('Błąd odświeżania strumienia po zmianie ustawień audio:', err2);
+        }
+      }
+    }
+  };
+
   // Zmiana mikrofonu
   const changeAudioInputDevice = async (deviceId) => {
     setSelectedAudioInput(deviceId);
@@ -182,11 +318,11 @@ export const VoiceProvider = ({ children }) => {
         localStreamRef.current = null;
       }
 
-      const newStream = await getLocalAudioStream(deviceId);
+      const newStream = await getLocalAudioStream(deviceId, true);
       if (newStream) {
         const newTrack = newStream.getAudioTracks()[0];
         if (newTrack) {
-          newTrack.enabled = !isMuted;
+          newTrack.enabled = !isMutedRef.current && !isMicTestingRef.current;
           peerConnectionsRef.current.forEach((pc) => {
             const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
             if (sender) sender.replaceTrack(newTrack);
@@ -238,9 +374,10 @@ export const VoiceProvider = ({ children }) => {
   const changeInputVolume = (val) => {
     const num = Math.max(0, Math.min(200, Number(val)));
     setInputVolume(num);
+    inputVolumeRef.current = num;
     localStorage.setItem('voicechat_input_vol', num);
-    if (loopbackAudioElementRef.current && isMicTesting) {
-      loopbackAudioElementRef.current.volume = Math.min(1, (outputVolume / 100) * (num / 100));
+    if (loopbackAudioElementRef.current && isMicTestingRef.current) {
+      loopbackAudioElementRef.current.volume = Math.min(1, (outputVolumeRef.current / 100) * (num / 100));
     }
   };
 
@@ -248,6 +385,7 @@ export const VoiceProvider = ({ children }) => {
   const changeOutputVolume = (val) => {
     const num = Math.max(0, Math.min(200, Number(val)));
     setOutputVolume(num);
+    outputVolumeRef.current = num;
     localStorage.setItem('voicechat_output_vol', num);
 
     audioElementsRef.current.forEach((audio) => {
@@ -256,14 +394,59 @@ export const VoiceProvider = ({ children }) => {
     if (directAudioRef.current) {
       directAudioRef.current.volume = Math.min(1, num / 100);
     }
-    if (loopbackAudioElementRef.current && isMicTesting) {
-      loopbackAudioElementRef.current.volume = Math.min(1, (num / 100) * (inputVolume / 100));
+    if (loopbackAudioElementRef.current && isMicTestingRef.current) {
+      loopbackAudioElementRef.current.volume = Math.min(1, (num / 100) * (inputVolumeRef.current / 100));
+    }
+  };
+
+  // Zakończ test mikrofonu natychmiast i bezwarunkowo
+  const stopMicTest = () => {
+    setIsMicTesting(false);
+    isMicTestingRef.current = false;
+
+    // 1. Zatrzymaj i zresetuj loopback element
+    if (loopbackAudioElementRef.current) {
+      try {
+        loopbackAudioElementRef.current.pause();
+        loopbackAudioElementRef.current.srcObject = null;
+      } catch (e) {}
+    }
+
+    // 2. Rozłącz węzły Web Audio jeśli istnieją
+    if (loopbackGainNodeRef.current) {
+      try { loopbackGainNodeRef.current.disconnect(); } catch (e) {}
+      loopbackGainNodeRef.current = null;
+    }
+    if (loopbackSourceRef.current) {
+      try { loopbackSourceRef.current.disconnect(); } catch (e) {}
+      loopbackSourceRef.current = null;
+    }
+    if (loopbackAudioCtxRef.current) {
+      try { loopbackAudioCtxRef.current.close(); } catch (e) {}
+      loopbackAudioCtxRef.current = null;
+    }
+
+    // 3. Przywróć wysyłanie mikrofonu do rozmówców (jeśli nie jesteśmy zmutowani)
+    const shouldEnable = !isMutedRef.current;
+    peerConnectionsRef.current.forEach((pc) => {
+      const senders = pc.getSenders().filter(s => s.track?.kind === 'audio');
+      senders.forEach(s => {
+        if (s.track) s.track.enabled = shouldEnable;
+      });
+    });
+    if (directPeerRef.current) {
+      const senders = directPeerRef.current.getSenders().filter(s => s.track?.kind === 'audio');
+      senders.forEach(s => {
+        if (s.track) s.track.enabled = shouldEnable;
+      });
     }
   };
 
   // Rozpocznij test mikrofonu (odsłuch samego siebie w słuchawkach + tymczasowe wyciszenie dla innych)
   const startMicTest = async () => {
     try {
+      stopMicTest();
+
       const stream = await getLocalAudioStream();
       if (!stream) {
         alert('Nie udało się uzyskać dostępu do mikrofonu.');
@@ -271,6 +454,7 @@ export const VoiceProvider = ({ children }) => {
       }
 
       setIsMicTesting(true);
+      isMicTestingRef.current = true;
 
       // 1. Wycisz wysyłanie audio do innych na czas testu
       peerConnectionsRef.current.forEach((pc) => {
@@ -296,40 +480,16 @@ export const VoiceProvider = ({ children }) => {
 
       const audio = loopbackAudioElementRef.current;
       audio.srcObject = stream;
-      audio.volume = Math.min(1, (outputVolume / 100) * (inputVolume / 100));
+      audio.volume = Math.min(1, (outputVolumeRef.current / 100) * (inputVolumeRef.current / 100));
       if (typeof audio.setSinkId === 'function' && selectedAudioOutput !== 'default') {
-        audio.setSinkId(selectedAudioOutput).catch(() => {});
+        try {
+          await audio.setSinkId(selectedAudioOutput);
+        } catch (e) {}
       }
       await audio.play();
     } catch (err) {
       console.warn('Błąd uruchamiania testu mikrofonu:', err);
-      setIsMicTesting(false);
-    }
-  };
-
-  // Zakończ test mikrofonu
-  const stopMicTest = () => {
-    setIsMicTesting(false);
-
-    // 1. Zatrzymaj odsłuch własnego głosu
-    if (loopbackAudioElementRef.current) {
-      loopbackAudioElementRef.current.pause();
-      loopbackAudioElementRef.current.srcObject = null;
-    }
-
-    // 2. Przywróć wysyłanie mikrofonu do rozmówców
-    const shouldEnable = !isMuted;
-    peerConnectionsRef.current.forEach((pc) => {
-      const senders = pc.getSenders().filter(s => s.track?.kind === 'audio');
-      senders.forEach(s => {
-        if (s.track) s.track.enabled = shouldEnable;
-      });
-    });
-    if (directPeerRef.current) {
-      const senders = directPeerRef.current.getSenders().filter(s => s.track?.kind === 'audio');
-      senders.forEach(s => {
-        if (s.track) s.track.enabled = shouldEnable;
-      });
+      stopMicTest();
     }
   };
 
@@ -365,8 +525,8 @@ export const VoiceProvider = ({ children }) => {
       const checkSpeaking = () => {
         if (!analyserRef.current) return;
         
-        if (audioCtx.state === 'suspended') {
-          audioCtx.resume().catch(() => {});
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
         }
 
         analyserRef.current.getByteFrequencyData(dataArray);
@@ -381,21 +541,23 @@ export const VoiceProvider = ({ children }) => {
         const normalized = Math.min(100, Math.round((average / 70) * 100));
         setMicVolume(normalized);
 
-        const isCurrentlySpeaking = average > 10 && !isMuted;
+        const threshold = isAutoSensitivityRef.current ? 10 : sensitivityThresholdRef.current;
+        const isCurrentlySpeaking = average > threshold && !isMutedRef.current && !isMicTestingRef.current;
 
         if (isCurrentlySpeaking !== wasSpeaking) {
           wasSpeaking = isCurrentlySpeaking;
-          if (activeVoiceChannel && socket) {
-            socket.emit('voice-speaking-state', {
-              channelId: activeVoiceChannel.channelId,
+          if (activeVoiceChannelRef.current && socketRef.current) {
+            socketRef.current.emit('voice-speaking-state', {
+              channelId: activeVoiceChannelRef.current.channelId,
               isSpeaking: isCurrentlySpeaking
             });
           }
-          if (user?.id) {
+          if (userRef.current?.id) {
+            const currentUserId = userRef.current.id;
             setSpeakingUsers(prev => {
               const next = new Set(prev);
-              if (isCurrentlySpeaking) next.add(user.id);
-              else next.delete(user.id);
+              if (isCurrentlySpeaking) next.add(currentUserId);
+              else next.delete(currentUserId);
               return next;
             });
           }
@@ -1142,6 +1304,12 @@ export const VoiceProvider = ({ children }) => {
       stopMicTest,
       changeInputVolume,
       changeOutputVolume,
+      noiseSuppression,
+      echoCancellation,
+      autoGainControl,
+      isAutoSensitivity,
+      sensitivityThreshold,
+      updateAudioProcessingSettings,
       isScreenSharing,
       localScreenStream,
       remoteScreenStreams,

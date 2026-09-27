@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mic, Headphones, Volume2, Check, Sparkles, RefreshCw, Smartphone, Download } from 'lucide-react';
+import {
+  X, User, Mic, MicOff, Headphones, Volume2, Check, Sparkles,
+  RefreshCw, Smartphone, Download, Sliders, ShieldCheck, SlidersHorizontal,
+  VolumeX, Activity
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useVoice } from '../../context/VoiceContext';
 import { useSocket } from '../../context/SocketContext';
@@ -27,7 +31,13 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     startMicTest,
     stopMicTest,
     changeInputVolume,
-    changeOutputVolume
+    changeOutputVolume,
+    noiseSuppression,
+    echoCancellation,
+    autoGainControl,
+    isAutoSensitivity,
+    sensitivityThreshold,
+    updateAudioProcessingSettings
   } = useVoice();
   const { socket } = useSocket();
 
@@ -56,17 +66,11 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     if (isOpen && activeTab === 'voice') {
       refreshAudioDevices(true);
       getLocalAudioStream().catch(() => {});
-    } else {
-      if (isMicTesting) {
-        stopMicTest();
-      }
     }
     return () => {
-      if (isMicTesting) {
-        stopMicTest();
-      }
+      stopMicTest();
     };
-  }, [isOpen, activeTab, isMicTesting]);
+  }, [isOpen, activeTab]);
 
   if (!isOpen || !user) return null;
 
@@ -333,15 +337,15 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
               </div>
             </form>
           ) : activeTab === 'voice' ? (
-            <div className="space-y-5">
+            <div className="space-y-5 animate-fade-in">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-0.5">Ustawienia głosu</h3>
-                  <p className="text-xs text-dark-300">Dostosuj urządzenia, głośność oraz przetestuj swój mikrofon.</p>
+                  <h3 className="text-xl font-bold text-white mb-0.5">Ustawienia głosu i dźwięku</h3>
+                  <p className="text-xs text-dark-300">Dostosuj urządzenia, tłumienie hałasu, bramkę szumów oraz odsłuch mikrofonu.</p>
                 </div>
                 <button
                   onClick={async () => {
-                    await getLocalAudioStream();
+                    await getLocalAudioStream(null, true);
                     await refreshAudioDevices(true);
                   }}
                   className="p-2 bg-dark-900 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors flex items-center space-x-1.5 text-xs border border-dark-700"
@@ -362,24 +366,24 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   <button
                     type="button"
                     onClick={async () => {
-                      await getLocalAudioStream();
+                      await getLocalAudioStream(null, true);
                       await refreshAudioDevices(true);
                     }}
-                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-dark-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow-md active:scale-95 self-start sm:self-auto"
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-dark-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow-md active:scale-95 self-start sm:self-auto cursor-pointer"
                   >
                     Zezwól na mikrofon
                   </button>
                 </div>
               )}
 
-              {/* Wybór Mikrofonu i Słuchawek + Suwaki Głośności (Styl Discord) */}
+              {/* Wybór Mikrofonu i Słuchawek + Suwaki Głośności */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* 1. MIKROFON */}
                 <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-3.5">
                   <div>
                     <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1.5 flex items-center space-x-1.5">
                       <Mic size={14} className="text-brand-400" />
-                      <span>Mikrofon</span>
+                      <span>Mikrofon (Urządzenie wejściowe)</span>
                     </label>
                     <select
                       value={selectedAudioInput}
@@ -417,7 +421,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   <div>
                     <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1.5 flex items-center space-x-1.5">
                       <Headphones size={14} className="text-emerald-400" />
-                      <span>Mówca (Słuchawki / Głośniki)</span>
+                      <span>Słuchawki / Głośniki (Wyjście)</span>
                     </label>
                     <select
                       value={selectedAudioOutput}
@@ -436,12 +440,12 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   {/* Suwak Głośności Słuchawek */}
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Głośność głośników</span>
+                      <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Głośność słuchawek</span>
                       <div className="flex items-center space-x-2">
                         <button
                           type="button"
                           onClick={playTestSound}
-                          className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold flex items-center space-x-1"
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold flex items-center space-x-1 cursor-pointer"
                         >
                           <Volume2 size={12} />
                           <span>Dźwięk testowy</span>
@@ -461,7 +465,146 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 </div>
               </div>
 
-              {/* SEKCJA TESTU MIKROFONU (STYL DISCORDA) */}
+              {/* SEKCJA PRZETWARZANIA GŁOSU I TŁUMIENIA HAŁASU */}
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 sm:p-5 space-y-4">
+                <div className="flex items-center space-x-2 border-b border-dark-700/80 pb-3">
+                  <SlidersHorizontal size={16} className="text-brand-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Przetwarzanie głosu i tłumienie (Ustawienia mikrofonu)
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Tłumienie hałasu (Noise Suppression) */}
+                  <div className="flex items-center justify-between p-3 bg-dark-800/80 rounded-xl border border-dark-700/60 hover:border-dark-600 transition-colors">
+                    <div className="pr-4">
+                      <div className="text-xs font-bold text-white flex items-center space-x-2">
+                        <span>Tłumienie hałasu (Noise Suppression)</span>
+                        {!noiseSuppression ? (
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-semibold">
+                            Wyłączone (Naturalny, głośny głos)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded font-semibold">
+                            Włączone
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-dark-400 mt-0.5">
+                        Wyłącz tłumienie, jeśli aplikacja za bardzo wycisza Twój głos lub ucina końcówki słów.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateAudioProcessingSettings({ noiseSuppression: !noiseSuppression })}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        noiseSuppression ? 'bg-brand-500' : 'bg-dark-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          noiseSuppression ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Usuwanie echa (Echo Cancellation) */}
+                  <div className="flex items-center justify-between p-3 bg-dark-800/80 rounded-xl border border-dark-700/60 hover:border-dark-600 transition-colors">
+                    <div className="pr-4">
+                      <div className="text-xs font-bold text-white">Usuwanie echa (Echo Cancellation)</div>
+                      <p className="text-[11px] text-dark-400 mt-0.5">
+                        Eliminuje sprzężenia akustyczne i echo z głośników.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateAudioProcessingSettings({ echoCancellation: !echoCancellation })}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        echoCancellation ? 'bg-brand-500' : 'bg-dark-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          echoCancellation ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Automatyczne wzmocnienie (AGC) */}
+                  <div className="flex items-center justify-between p-3 bg-dark-800/80 rounded-xl border border-dark-700/60 hover:border-dark-600 transition-colors">
+                    <div className="pr-4">
+                      <div className="text-xs font-bold text-white">Automatyczna regulacja wzmocnienia mikrofonu (AGC)</div>
+                      <p className="text-[11px] text-dark-400 mt-0.5">
+                        Wyrównuje poziom głośności Twojego mikrofonu do optymalnego poziomu.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateAudioProcessingSettings({ autoGainControl: !autoGainControl })}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        autoGainControl ? 'bg-brand-500' : 'bg-dark-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          autoGainControl ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bramka szumów i Czułość Wejścia */}
+                <div className="pt-2 border-t border-dark-700/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white">Automatyczna czułość wejścia (Bramka szumów)</div>
+                      <p className="text-[11px] text-dark-400">
+                        {isAutoSensitivity
+                          ? 'Włączone: automatycznie wycina ciche szumy otoczenia.'
+                          : 'Wyłączone: ręcznie ustaw suwakiem, jak głośno musisz mówić, by mikrofon się otworzył.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateAudioProcessingSettings({ isAutoSensitivity: !isAutoSensitivity })}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isAutoSensitivity ? 'bg-brand-500' : 'bg-dark-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          isAutoSensitivity ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {!isAutoSensitivity && (
+                    <div className="bg-dark-950/60 p-3.5 rounded-xl border border-dark-700 space-y-2 animate-fade-in">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Próg aktywacji mikrofonu</span>
+                        <span className="font-mono text-brand-400 font-bold">{sensitivityThreshold}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="80"
+                        value={sensitivityThreshold}
+                        onChange={(e) => updateAudioProcessingSettings({ sensitivityThreshold: e.target.value })}
+                        className="w-full accent-brand-500 h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <p className="text-[10px] text-dark-400">
+                        Poniżej żółtej kreski na pasku testu dźwięk jest wyciszany, powyżej — przesyłany do rozmówców.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SEKCJA TESTU MIKROFONU (ODSŁUCH NA ŻYWO) */}
               <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 sm:p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-dark-200 uppercase tracking-wider flex items-center space-x-2">
@@ -475,12 +618,18 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   Kliknij przycisk poniżej i powiedz coś. <b>Usłyszysz swój własny głos w słuchawkach</b>, aby sprawdzić jakość. Na czas testu Twój mikrofon jest <b>wyciszony dla innych osób</b> na kanale i PV.
                 </p>
 
-                {/* Przycisk Testu + Pasek Segmentowy (Equalizer / VU Meter jak na Discordzie) */}
+                {/* Przycisk Testu + Pasek Segmentowy */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
                   <button
                     type="button"
-                    onClick={isMicTesting ? stopMicTest : startMicTest}
-                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-lg ${
+                    onClick={() => {
+                      if (isMicTesting) {
+                        stopMicTest();
+                      } else {
+                        startMicTest();
+                      }
+                    }}
+                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-lg cursor-pointer ${
                       isMicTesting
                         ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-red-600/30'
                         : 'bg-brand-500 hover:bg-brand-600 text-white shadow-brand-500/30 active:scale-95'
@@ -491,13 +640,30 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                   </button>
 
                   {/* Pasek segmentowy z pionowych kresek */}
-                  <div className="flex-1 flex items-center space-x-1 bg-dark-950/80 p-2 rounded-xl border border-dark-700/80 h-10 overflow-hidden">
+                  <div className="flex-1 flex items-center space-x-1 bg-dark-950/80 p-2 rounded-xl border border-dark-700/80 h-10 overflow-hidden relative">
+                    {/* Wskaźnik progu czułości jeśli ręczny */}
+                    {!isAutoSensitivity && (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 z-10 shadow-sm shadow-yellow-400"
+                        style={{ left: `${Math.min(100, Math.max(0, sensitivityThreshold))}%` }}
+                        title={`Próg aktywacji: ${sensitivityThreshold}%`}
+                      />
+                    )}
+
                     {Array.from({ length: 36 }).map((_, idx) => {
                       const threshold = (idx / 36) * 100;
                       const isActive = micVolume >= threshold;
+                      const gateThreshold = isAutoSensitivity ? 10 : sensitivityThreshold;
+                      const isAboveGate = threshold >= gateThreshold;
+
                       let activeColor = 'bg-emerald-500 shadow-sm shadow-emerald-500/50';
-                      if (idx >= 24 && idx < 30) activeColor = 'bg-yellow-400 shadow-sm shadow-yellow-400/50';
-                      else if (idx >= 30) activeColor = 'bg-red-500 shadow-sm shadow-red-500/50';
+                      if (!isAboveGate) {
+                        activeColor = 'bg-dark-500'; // poniżej bramki szumów
+                      } else if (idx >= 24 && idx < 30) {
+                        activeColor = 'bg-yellow-400 shadow-sm shadow-yellow-400/50';
+                      } else if (idx >= 30) {
+                        activeColor = 'bg-red-500 shadow-sm shadow-red-500/50';
+                      }
 
                       return (
                         <div
