@@ -190,20 +190,26 @@ export const setupSocketHandlers = (io) => {
 
       const messages = db.data.messages || [];
       const msg = messages.find(m => m.id === messageId);
-      if (!msg) return;
 
-      const server = db.getServerById(serverId || msg.serverId);
-      const isAuthor = msg.userId === currentUserId;
-      const canManage = server ? db.hasServerPermission(server, currentUserId, 'MANAGE_MESSAGES') : false;
+      const targetChannelId = channelId || msg?.channelId;
+      const targetServerId = serverId || msg?.serverId;
 
-      if (!isAuthor && !canManage) return;
+      if (msg) {
+        const server = db.getServerById(targetServerId);
+        const isAuthor = msg.userId === currentUserId;
+        const canManage = server ? db.hasServerPermission(server, currentUserId, 'MANAGE_MESSAGES') : false;
 
-      db.deleteMessage(messageId);
+        if (!isAuthor && !canManage) return;
 
-      io.to(`channel:${channelId || msg.channelId}`).emit('message-deleted', {
-        messageId,
-        channelId: channelId || msg.channelId
-      });
+        db.deleteMessage(messageId);
+      }
+
+      if (targetChannelId) {
+        io.to(`channel:${targetChannelId}`).emit('message-deleted', {
+          messageId,
+          channelId: targetChannelId
+        });
+      }
     });
 
     socket.on('delete-direct-message', ({ messageId, recipientId }) => {
@@ -211,16 +217,18 @@ export const setupSocketHandlers = (io) => {
 
       const dms = db.data.directMessages || [];
       const dm = dms.find(m => m.id === messageId);
-      if (!dm) return;
 
-      if (dm.senderId !== currentUserId) return;
+      if (dm) {
+        if (dm.senderId !== currentUserId) return;
+        db.deleteDirectMessage(messageId);
+      }
 
-      db.deleteDirectMessage(messageId);
-
-      const targetId = recipientId || (dm.senderId === currentUserId ? dm.recipientId : dm.senderId);
-      const otherSockets = userSockets.get(targetId);
-      if (otherSockets) {
-        otherSockets.forEach(sId => io.to(sId).emit('direct-message-deleted', { messageId }));
+      const targetId = recipientId || (dm ? (dm.senderId === currentUserId ? dm.recipientId : dm.senderId) : null);
+      if (targetId) {
+        const otherSockets = userSockets.get(targetId);
+        if (otherSockets) {
+          otherSockets.forEach(sId => io.to(sId).emit('direct-message-deleted', { messageId }));
+        }
       }
       socket.emit('direct-message-deleted', { messageId });
     });

@@ -546,6 +546,9 @@ export const App = () => {
             dmUser={activeView === 'dm' ? activeDmUser : null}
             messages={messages}
             onSendMessage={handleSendMessage}
+            onDeleteMessage={(messageId) => {
+              setMessages(prev => prev.filter(m => m.id !== messageId));
+            }}
             onSelectDmUser={(targetUser) => {
               selectDmUser(targetUser);
               setMobilePane('chat');

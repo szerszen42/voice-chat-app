@@ -193,6 +193,12 @@ export const VoiceProvider = ({ children }) => {
       }
     }
 
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      console.warn('navigator.mediaDevices.getUserMedia nie jest dostępne w tej przeglądarce.');
+      setHasMicPermission(false);
+      return null;
+    }
+
     try {
       const audioConstraints = {
         echoCancellation: echoCancellationRef.current,
@@ -211,19 +217,20 @@ export const VoiceProvider = ({ children }) => {
       localStreamRef.current = stream;
       setHasMicPermission(true);
       setupAudioAnalyser(stream);
-      await refreshAudioDevices(false);
+      await refreshAudioDevices(false).catch(() => {});
       return stream;
     } catch (err) {
-      console.warn('Próba pobrania wybranego mikrofonu nie powiodła się, próba domyślnego:', err);
+      console.warn('Próba pobrania wybranego mikrofonu z zaawansowanymi parametrami nie powiodła się, próba prostego audio: true:', err);
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         localStreamRef.current = fallbackStream;
         setHasMicPermission(true);
         setupAudioAnalyser(fallbackStream);
-        await refreshAudioDevices(false);
+        await refreshAudioDevices(false).catch(() => {});
         return fallbackStream;
       } catch (err2) {
-        console.error('Brak dostępu do mikrofonu użytkownika:', err2);
+        console.warn('Brak dostępu do mikrofonu (brak uprawnień lub urządzenie zajęte):', err2);
+        setHasMicPermission(false);
         return null;
       }
     }
@@ -626,25 +633,44 @@ export const VoiceProvider = ({ children }) => {
   // --- KANAŁY GŁOSOWE (SERWERY) ---
   const createPeerConnection = async (targetSocketId, targetUser, isInitiator) => {
     if (peerConnectionsRef.current.has(targetSocketId)) {
-      peerConnectionsRef.current.get(targetSocketId).close();
+      try {
+        peerConnectionsRef.current.get(targetSocketId).close();
+      } catch (e) {}
     }
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionsRef.current.set(targetSocketId, pc);
     pendingCandidatesRef.current.set(targetSocketId, []);
 
-    // Dodaj lokalne audio
-    const stream = await getLocalAudioStream();
-    if (stream) {
+    // Dodaj lokalne audio jeśli dostępne
+    let stream = null;
+    try {
+      stream = await getLocalAudioStream();
+    } catch (e) {
+      console.warn('Błąd pobierania audio w createPeerConnection:', e);
+    }
+
+    if (stream && stream.getAudioTracks().length > 0) {
       stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
+        try {
+          pc.addTrack(track, stream);
+        } catch (e) {}
       });
+    } else {
+      // Jeśli brak mikrofonu lub brak zgody, dodaj transceiver w trybie odbioru (recvonly), aby użytkownik MÓGŁ SŁUCHAĆ innych na telefonie
+      try {
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+      } catch (e) {
+        console.warn('addTransceiver error:', e);
+      }
     }
 
     // Dodaj lokalny stream ekranu jeśli aktywny
     if (localScreenStreamRef.current) {
       localScreenStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localScreenStreamRef.current);
+        try {
+          pc.addTrack(track, localScreenStreamRef.current);
+        } catch (e) {}
       });
     }
 
@@ -661,14 +687,25 @@ export const VoiceProvider = ({ children }) => {
         }
         audio.srcObject = event.streams[0];
         audio.muted = isDeafened;
+        audio.playsInline = true;
 
         if (typeof audio.setSinkId === 'function' && selectedAudioOutput !== 'default') {
           audio.setSinkId(selectedAudioOutput).catch(() => {});
         }
 
-        audio.play().catch(() => {
-          document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
-        });
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((playErr) => {
+            console.warn('Autoodtwarzanie zablokowane przez przeglądarkę mobilną, dodaję nasłuchiwacz dotyku/kliknięcia:', playErr);
+            const unlockPlay = () => {
+              audio.play().catch(() => {});
+              document.removeEventListener('click', unlockPlay);
+              document.removeEventListener('touchstart', unlockPlay);
+            };
+            document.addEventListener('click', unlockPlay, { once: true });
+            document.addEventListener('touchstart', unlockPlay, { once: true });
+          });
+        }
       } else if (track.kind === 'video') {
         // Zdalny stream ekranu
         setRemoteScreenStreams(prev => {
@@ -725,14 +762,34 @@ export const VoiceProvider = ({ children }) => {
       leaveVoiceChannel(false);
     }
 
-    playJoinSound();
-    await getLocalAudioStream();
+    // Odblokuj Web Audio dla iOS Safari i Android Chrome w momencie dotknięcia
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new AudioCtx();
+        }
+        if (audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
+        }
+      }
+    } catch (e) {}
 
+    playJoinSound();
+
+    // ZAWSZE ustaw aktywny stan kanału, żeby interfejs od razu połączył i wyświetlił scenę
     setActiveVoiceChannel({
       channelId: channel.id,
       channelName: channel.name,
       serverId
     });
+
+    // Spróbuj pobrać mikrofon w tle bez blokowania połączenia
+    try {
+      await getLocalAudioStream();
+    } catch (e) {
+      console.warn('Brak dostępu do mikrofonu podczas dołączania do pokoju głosowego:', e);
+    }
 
     socket.emit('join-voice-channel', {
       channelId: channel.id,
@@ -1217,6 +1274,16 @@ export const VoiceProvider = ({ children }) => {
       });
     });
 
+    socket.on('voice-join-denied', ({ channelId, message }) => {
+      alert(message || 'Brak uprawnień do dołączenia do tego kanału głosowego.');
+      setActiveVoiceChannel(null);
+      setVoiceUsers([]);
+    });
+
+    socket.on('error-notice', ({ message }) => {
+      alert(message || 'Wystąpił błąd.');
+    });
+
     return () => {
       socket.off('voice-room-users');
       socket.off('user-joined-voice');
@@ -1229,6 +1296,8 @@ export const VoiceProvider = ({ children }) => {
       socket.off('direct-call-signal');
       socket.off('user-speaking-changed');
       socket.off('forced-voice-channel-switch');
+      socket.off('voice-join-denied');
+      socket.off('error-notice');
     };
   }, [socket, user, isDeafened, activeVoiceChannel, selectedAudioOutput]);
 

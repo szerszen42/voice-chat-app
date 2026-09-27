@@ -45,6 +45,7 @@ export const ChatArea = ({
   dmUser,
   messages = [],
   onSendMessage,
+  onDeleteMessage,
   onSelectDmUser,
   serverMembers = [],
   onToggleMobileSidebar,
@@ -112,6 +113,12 @@ export const ChatArea = ({
     if (!msg) return;
     if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) return;
 
+    // Natychmiastowe usunięcie z lokalnego widoku bez czekania na sieć
+    if (onDeleteMessage) {
+      onDeleteMessage(msg.id);
+    }
+    setMsgContextMenu(null);
+
     try {
       if (channel) {
         await api.deleteChannelMessage(channel.id, msg.id).catch(() => {});
@@ -130,7 +137,6 @@ export const ChatArea = ({
           });
         }
       }
-      setMsgContextMenu(null);
     } catch (err) {
       console.error('Błąd usuwania wiadomości:', err);
     }
