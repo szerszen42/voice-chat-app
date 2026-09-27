@@ -28,10 +28,13 @@ import { ActiveCallOverlay } from './components/voice/ActiveCallOverlay';
 import { InstallPwaModal } from './components/modals/InstallPwaModal';
 import { FriendsView } from './components/friends/FriendsView';
 import { VoiceStage } from './components/voice/VoiceStage';
+import { UserProfileModal } from './components/modals/UserProfileModal';
+import { useVoice } from './context/VoiceContext';
 
 export const App = () => {
   const { user, loading: authLoading } = useAuth();
   const { socket } = useSocket();
+  const { startDirectCall } = useVoice();
 
   // Widok główny: 'dm' lub 'server'
   const [activeView, setActiveView] = useState('server');
@@ -67,6 +70,14 @@ export const App = () => {
   const [editingChannel, setEditingChannel] = useState(null);
   const [editingServer, setEditingServer] = useState(null);
   const [isInstallPwaOpen, setIsInstallPwaOpen] = useState(false);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState(null);
+
+  const handleOpenUserProfile = (target) => {
+    const targetId = typeof target === 'object' ? target?.id : target;
+    if (targetId) {
+      setSelectedProfileUserId(targetId);
+    }
+  };
 
   // Wczytaj serwery, użytkowników i znajomych po zalogowaniu
   useEffect(() => {
@@ -467,6 +478,7 @@ export const App = () => {
             }}
             onOpenSettings={() => setIsProfileSettingsOpen(true)}
             onOpenInstallPwa={() => setIsInstallPwaOpen(true)}
+            onOpenUserProfile={handleOpenUserProfile}
           />
         ) : (
           <ChannelSidebar
@@ -483,6 +495,7 @@ export const App = () => {
             onLeaveServer={handleLeaveOrDeleteServer}
             onDeleteServer={handleLeaveOrDeleteServer}
             onOpenInstallPwa={() => setIsInstallPwaOpen(true)}
+            onOpenUserProfile={handleOpenUserProfile}
           />
         )}
       </div>
@@ -500,9 +513,10 @@ export const App = () => {
             }}
             onRefreshFriends={loadFriends}
             onOpenMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
+            onOpenUserProfile={handleOpenUserProfile}
           />
         ) : activeView === 'server' && activeChannel?.type === 'voice' ? (
-          <VoiceStage />
+          <VoiceStage onOpenUserProfile={handleOpenUserProfile} />
         ) : (
           <ChatArea
             channel={activeView === 'server' ? activeChannel : null}
@@ -517,6 +531,7 @@ export const App = () => {
             onToggleMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
             onToggleMobileMembers={() => setMobilePane(prev => prev === 'members' ? 'chat' : 'members')}
             mobilePane={mobilePane}
+            onOpenUserProfile={handleOpenUserProfile}
           />
         )}
       </div>
@@ -551,10 +566,8 @@ export const App = () => {
             <div
               key={member.id}
               onClick={() => {
-                if (member.id !== user?.id) {
-                  selectDmUser(member);
-                  setMobilePane('chat');
-                }
+                handleOpenUserProfile(member.id);
+                setMobilePane('chat');
               }}
               className="flex items-center space-x-2.5 px-2 py-2 rounded-md hover:bg-dark-700/60 cursor-pointer text-dark-200"
             >
@@ -609,6 +622,21 @@ export const App = () => {
         isOpen={isProfileSettingsOpen}
         onClose={() => setIsProfileSettingsOpen(false)}
         onOpenInstallPwa={() => setIsInstallPwaOpen(true)}
+      />
+
+      <UserProfileModal
+        userId={selectedProfileUserId}
+        isOpen={Boolean(selectedProfileUserId)}
+        onClose={() => setSelectedProfileUserId(null)}
+        onStartDm={(targetUser) => {
+          selectDmUser(targetUser);
+        }}
+        onStartCall={(targetUser) => {
+          startDirectCall(targetUser);
+        }}
+        onSelectServer={(serverId) => {
+          selectServer(serverId);
+        }}
       />
 
       <CreateChannelModal

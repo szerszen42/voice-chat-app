@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X, User, Mic, MicOff, Headphones, Volume2, Check, Sparkles,
   RefreshCw, Smartphone, Download, Sliders, ShieldCheck, SlidersHorizontal,
-  VolumeX, Activity
+  VolumeX, Activity, Upload, Image as ImageIcon, Trash2, Palette
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useVoice } from '../../context/VoiceContext';
@@ -45,19 +45,26 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
   const [displayName, setDisplayName] = useState('');
   const [customStatus, setCustomStatus] = useState('');
   const [bio, setBio] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [avatarColor, setAvatarColor] = useState('#5865f2');
   const [avatarEmoji, setAvatarEmoji] = useState('🎮');
+  const [bannerColor, setBannerColor] = useState('#5865f2');
   const [status, setStatus] = useState('online');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const sliderTrackRef = useRef(null);
 
   useEffect(() => {
     if (user) {
       setDisplayName(user.displayName || user.username || '');
       setCustomStatus(user.customStatus || '');
       setBio(user.bio || '');
+      setAvatarUrl(user.avatarUrl || '');
       setAvatarColor(user.avatarColor || '#5865f2');
       setAvatarEmoji(user.avatarEmoji || '🎮');
+      setBannerColor(user.bannerColor || '#5865f2');
       setStatus(user.status || 'online');
     }
   }, [user, isOpen]);
@@ -74,8 +81,9 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
 
   if (!isOpen || !user) return null;
 
-  const emojiOptions = ['🎮', '🚀', '🐱', '🎧', '⚡', '🔥', '🦊', '👾', '🌟', '💎', '🦄', '🏆', '🍕', '🛡️', '🍀', '🎵'];
-  const colorOptions = ['#5865f2', '#eb459e', '#23a55a', '#f0b232', '#9b59b6', '#00b0f4', '#e67e22', '#111214', '#e91e63'];
+  const emojiOptions = ['🎮', '🚀', '🐱', '🎧', '⚡', '🔥', '🦊', '👾', '🌟', '💎', '🦄', '🏆', '🍕', '🛡️', '🍀', '🎵', '🦁', '💀', '🤖', '👑'];
+  const colorOptions = ['#5865f2', '#eb459e', '#23a55a', '#f0b232', '#9b59b6', '#00b0f4', '#e67e22', '#111214', '#e91e63', '#1abc9c'];
+  const bannerOptions = ['#5865f2', '#2f3136', '#eb459e', '#23a55a', '#f0b232', '#9b59b6', '#00b0f4', '#e67e22', '#111214', '#e91e63'];
 
   const statusOptions = [
     { id: 'online', label: 'Dostępny', color: 'bg-emerald-500', desc: 'Widziany jako aktywny' },
@@ -83,6 +91,56 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
     { id: 'dnd', label: 'Nie przeszkadzać', color: 'bg-red-500', desc: 'Wycisz powiadomienia' },
     { id: 'offline', label: 'Niewidoczny', color: 'bg-neutral-500', desc: 'Wyświetlaj jako offline' },
   ];
+
+  // Obsługa wgrywania pliku graficznego z dysku
+  const handleAvatarFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Plik jest za duży! Wybierz zdjęcie do 8MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 320;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setAvatarUrl(dataUrl);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarUrl('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -92,8 +150,10 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
         displayName: displayName.trim(),
         customStatus: customStatus.trim(),
         bio: bio.trim(),
+        avatarUrl,
         avatarColor,
         avatarEmoji,
+        bannerColor,
         status
       });
 
@@ -116,10 +176,51 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
   const previewUser = {
     ...user,
     displayName,
+    avatarUrl,
     avatarColor,
     avatarEmoji,
+    bannerColor,
     status,
     customStatus
+  };
+
+  // Obsługa przesuwania suwaka czułości ze zdjęcia (Styl Discord)
+  const updateSensitivityFromClientX = (clientX) => {
+    if (isAutoSensitivity || !sliderTrackRef.current) return;
+    const rect = sliderTrackRef.current.getBoundingClientRect();
+    const rawPercent = ((clientX - rect.left) / rect.width) * 100;
+    const clamped = Math.round(Math.max(1, Math.min(95, rawPercent)));
+    updateAudioProcessingSettings({ sensitivityThreshold: clamped });
+  };
+
+  const handleSliderMouseDown = (e) => {
+    if (isAutoSensitivity) return;
+    updateSensitivityFromClientX(e.clientX);
+    const onMouseMove = (moveEvent) => {
+      updateSensitivityFromClientX(moveEvent.clientX);
+    };
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleSliderTouchStart = (e) => {
+    if (isAutoSensitivity || !e.touches[0]) return;
+    updateSensitivityFromClientX(e.touches[0].clientX);
+    const onTouchMove = (moveEvent) => {
+      if (moveEvent.touches[0]) {
+        updateSensitivityFromClientX(moveEvent.touches[0].clientX);
+      }
+    };
+    const onTouchEnd = () => {
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', onTouchEnd);
   };
 
   return (
@@ -191,19 +292,93 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 <p className="text-xs text-dark-300">Dostosuj swój nick, awatar i status widoczny dla znajomych.</p>
               </div>
 
-              {/* Podgląd karty profilu */}
-              <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 flex items-center space-x-4 shadow-sm">
-                <UserAvatar user={previewUser} size="lg" />
-                <div className="min-w-0">
-                  <div className="text-base font-bold text-white truncate">
-                    {displayName || user.username}
+              {/* Podgląd karty profilu (Discord Style) */}
+              <div className="bg-dark-900 border border-dark-700 rounded-xl overflow-hidden shadow-md">
+                <div
+                  className="h-20 w-full relative transition-colors"
+                  style={{ backgroundColor: bannerColor }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
+                </div>
+                <div className="px-4 pb-4 -mt-8 flex items-end space-x-3.5">
+                  <div className="ring-4 ring-dark-900 rounded-full bg-dark-900 p-0.5 shadow-xl">
+                    <UserAvatar user={previewUser} size="lg" showStatus={true} />
                   </div>
-                  <div className="text-xs text-dark-400">@{user.username}</div>
-                  {customStatus && (
-                    <div className="text-xs text-brand-400 mt-1 truncate">
-                      {customStatus}
+                  <div className="min-w-0 flex-1 pb-1">
+                    <div className="text-base font-bold text-white truncate">
+                      {displayName || user.username}
                     </div>
+                    <div className="text-xs text-dark-400">@{user.username}</div>
+                    {customStatus && (
+                      <div className="text-xs text-brand-400 mt-0.5 truncate">
+                        {customStatus}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sekcja wgrywania własnego zdjęcia profilowego */}
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider flex items-center space-x-2">
+                    <ImageIcon size={15} className="text-brand-400" />
+                    <span>Zdjęcie profilowe (Awatar)</span>
+                  </label>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      className="text-xs text-red-400 hover:text-red-300 flex items-center space-x-1 cursor-pointer font-semibold"
+                    >
+                      <Trash2 size={13} />
+                      <span>Usuń zdjęcie</span>
+                    </button>
                   )}
+                </div>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleAvatarFileUpload}
+                  accept="image/png, image/jpeg, image/webp, image/gif"
+                  className="hidden"
+                />
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white rounded-lg text-xs font-bold transition-all flex items-center space-x-2 shadow-md cursor-pointer"
+                  >
+                    <Upload size={14} />
+                    <span>Wgraj plik z dysku / telefonu</span>
+                  </button>
+                  <span className="text-[11px] text-dark-400">
+                    JPG, PNG, GIF, WebP (do 8MB)
+                  </span>
+                </div>
+              </div>
+
+              {/* Wybór koloru baneru */}
+              <div>
+                <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5 flex items-center space-x-1.5">
+                  <Palette size={14} className="text-brand-400" />
+                  <span>Kolor baneru profilu</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 bg-dark-900 p-2.5 rounded-lg border border-dark-700">
+                  {bannerOptions.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setBannerColor(c)}
+                      className={`w-7 h-7 rounded-lg transition-transform ${
+                        bannerColor === c ? 'scale-115 ring-2 ring-white shadow-lg' : 'hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -277,47 +452,49 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 </div>
               </div>
 
-              {/* Personalizacja Awatara */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                    Emotka awatara
-                  </label>
-                  <div className="flex flex-wrap gap-1 bg-dark-900 p-2 rounded-lg border border-dark-700 max-h-24 overflow-y-auto">
-                    {emojiOptions.map((em) => (
-                      <button
-                        key={em}
-                        type="button"
-                        onClick={() => setAvatarEmoji(em)}
-                        className={`text-lg p-1 rounded hover:bg-dark-700 transition-transform ${
-                          avatarEmoji === em ? 'bg-dark-600 ring-1 ring-brand-500 scale-110' : ''
-                        }`}
-                      >
-                        {em}
-                      </button>
-                    ))}
+              {/* Personalizacja Awatara domyślnego (Emotka + Kolor) */}
+              {!avatarUrl && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
+                      Emotka awatara
+                    </label>
+                    <div className="flex flex-wrap gap-1 bg-dark-900 p-2 rounded-lg border border-dark-700 max-h-24 overflow-y-auto">
+                      {emojiOptions.map((em) => (
+                        <button
+                          key={em}
+                          type="button"
+                          onClick={() => setAvatarEmoji(em)}
+                          className={`text-lg p-1 rounded hover:bg-dark-700 transition-transform ${
+                            avatarEmoji === em ? 'bg-dark-600 ring-1 ring-brand-500 scale-110' : ''
+                          }`}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                    Kolor tła awatara
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 bg-dark-900 p-2 rounded-lg border border-dark-700">
-                    {colorOptions.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setAvatarColor(c)}
-                        className={`w-6 h-6 rounded-full transition-transform ${
-                          avatarColor === c ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
-                        }`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
+                      Kolor tła awatara
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 bg-dark-900 p-2 rounded-lg border border-dark-700">
+                      {colorOptions.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setAvatarColor(c)}
+                          className={`w-6 h-6 rounded-full transition-transform ${
+                            avatarColor === c ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Zapisz */}
               <div className="pt-2 flex items-center justify-end space-x-3">
@@ -330,7 +507,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md shadow-brand-500/20"
+                  className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md shadow-brand-500/20 cursor-pointer"
                 >
                   {loading ? 'Zapisywanie...' : 'Zapisz zmiany'}
                 </button>
@@ -341,14 +518,14 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold text-white mb-0.5">Ustawienia głosu i dźwięku</h3>
-                  <p className="text-xs text-dark-300">Dostosuj urządzenia, tłumienie hałasu, bramkę szumów oraz odsłuch mikrofonu.</p>
+                  <p className="text-xs text-dark-300">Dostosuj urządzenia, tłumienie hałasu, czułość wejściową oraz odsłuch mikrofonu.</p>
                 </div>
                 <button
                   onClick={async () => {
                     await getLocalAudioStream(null, true);
                     await refreshAudioDevices(true);
                   }}
-                  className="p-2 bg-dark-900 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors flex items-center space-x-1.5 text-xs border border-dark-700"
+                  className="p-2 bg-dark-900 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors flex items-center space-x-1.5 text-xs border border-dark-700 cursor-pointer"
                   title="Wczytaj i odśwież nazwy podłączonych urządzeń"
                 >
                   <RefreshCw size={14} />
@@ -465,24 +642,106 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                 </div>
               </div>
 
-              {/* SEKCJA PRZETWARZANIA GŁOSU I TŁUMIENIA HAŁASU */}
+              {/* SEKCJA CZUŁOŚCI WEJŚCIOWEJ (DOKŁADNY STYL DISCORDA ZE ZDJĘCIA) */}
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 sm:p-5 space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                      <Sliders size={15} className="text-brand-400" />
+                      <span>Czułość wejściowa</span>
+                    </div>
+                    <p className="text-[11px] text-dark-400 mt-0.5 max-w-md">
+                      Określa, ile dźwięku VoiceChat przesyła z Twojego mikrofonu. Wyłącz tę funkcję, jeśli aplikacja nie odbiera Twojego głosu.
+                    </p>
+                  </div>
+
+                  {/* Toggle automatycznej czułości */}
+                  <div className="flex items-center space-x-2.5 self-start sm:self-center bg-dark-800/80 px-3 py-1.5 rounded-lg border border-dark-700">
+                    <span className="text-xs text-dark-200 font-medium">Automatycznie</span>
+                    <button
+                      type="button"
+                      onClick={() => updateAudioProcessingSettings({ isAutoSensitivity: !isAutoSensitivity })}
+                      className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isAutoSensitivity ? 'bg-brand-500' : 'bg-dark-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          isAutoSensitivity ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pasek suwaka ze zdjęcia Discorda: lewa część ciemna, prawa szmaragdowa z suwakiem i miernikiem poziomu */}
+                <div className="space-y-1.5 pt-1">
+                  <div
+                    ref={sliderTrackRef}
+                    onMouseDown={handleSliderMouseDown}
+                    onTouchStart={handleSliderTouchStart}
+                    className={`relative h-6 w-full bg-[#1e1f22] rounded-full overflow-hidden border border-dark-700 select-none ${
+                      isAutoSensitivity ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  >
+                    {/* Prawa strona (obszar aktywny powyżej progu) - soczysta zieleń Discorda */}
+                    <div
+                      className="absolute top-0 bottom-0 right-0 bg-[#23a55a]"
+                      style={{ left: `${sensitivityThreshold}%` }}
+                    />
+
+                    {/* Lewa strona (obszar wyciszony poniżej progu) - ciemne tło */}
+                    <div
+                      className="absolute top-0 bottom-0 left-0 bg-[#2b2d31]"
+                      style={{ width: `${sensitivityThreshold}%` }}
+                    />
+
+                    {/* Wizualizator głośności mikrofonu na żywo */}
+                    <div
+                      className={`absolute top-0 bottom-0 left-0 transition-all duration-75 ${
+                        micVolume >= sensitivityThreshold ? 'bg-emerald-300/80' : 'bg-dark-500/80'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, micVolume))}%` }}
+                    />
+
+                    {/* Draggable Thumb / Biały okrągły suwak ze zdjęcia */}
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4.5 h-4.5 bg-white rounded-full shadow-lg border border-gray-300 pointer-events-none z-20 flex items-center justify-center transition-transform active:scale-125"
+                      style={{ left: `${sensitivityThreshold}%` }}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-dark-900/60" />
+                    </div>
+                  </div>
+
+                  {/* Skala decybeli i wartości pod suwakiem */}
+                  <div className="flex justify-between text-[10px] text-dark-400 font-mono px-1">
+                    <span>-100 dB</span>
+                    <span className="text-emerald-400 font-bold">
+                      {isAutoSensitivity ? 'Tryb automatyczny (Dynamiczny próg)' : `Próg: ${sensitivityThreshold - 100} dB (${sensitivityThreshold}%)`}
+                    </span>
+                    <span>0 dB</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SEKCJA PRZETWARZANIA GŁOSU I TŁUMIENIA ZAKŁÓCEŃ */}
               <div className="bg-dark-900 border border-dark-700 rounded-xl p-4 sm:p-5 space-y-4">
                 <div className="flex items-center space-x-2 border-b border-dark-700/80 pb-3">
                   <SlidersHorizontal size={16} className="text-brand-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider">
-                    Przetwarzanie głosu i tłumienie (Ustawienia mikrofonu)
+                    Zaawansowane przetwarzanie głosu
                   </span>
                 </div>
 
                 <div className="space-y-3">
-                  {/* Tłumienie hałasu (Noise Suppression) */}
+                  {/* Tłumienie hałasu / zakłóceń (Noise Suppression) */}
                   <div className="flex items-center justify-between p-3 bg-dark-800/80 rounded-xl border border-dark-700/60 hover:border-dark-600 transition-colors">
                     <div className="pr-4">
                       <div className="text-xs font-bold text-white flex items-center space-x-2">
-                        <span>Tłumienie hałasu (Noise Suppression)</span>
+                        <span>Tłumienie zakłóceń (Noise Suppression)</span>
                         {!noiseSuppression ? (
                           <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-semibold">
-                            Wyłączone (Naturalny, głośny głos)
+                            Wyłączone (Brak tłumienia)
                           </span>
                         ) : (
                           <span className="text-[10px] bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded font-semibold">
@@ -491,7 +750,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                         )}
                       </div>
                       <p className="text-[11px] text-dark-400 mt-0.5">
-                        Wyłącz tłumienie, jeśli aplikacja za bardzo wycisza Twój głos lub ucina końcówki słów.
+                        Wyłącz tłumienie, jeśli aplikacja za bardzo wycisza Twój głos lub ucina cichsze słowa.
                       </p>
                     </div>
                     <button
@@ -555,53 +814,6 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                     </button>
                   </div>
                 </div>
-
-                {/* Bramka szumów i Czułość Wejścia */}
-                <div className="pt-2 border-t border-dark-700/60 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-white">Automatyczna czułość wejścia (Bramka szumów)</div>
-                      <p className="text-[11px] text-dark-400">
-                        {isAutoSensitivity
-                          ? 'Włączone: automatycznie wycina ciche szumy otoczenia.'
-                          : 'Wyłączone: ręcznie ustaw suwakiem, jak głośno musisz mówić, by mikrofon się otworzył.'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateAudioProcessingSettings({ isAutoSensitivity: !isAutoSensitivity })}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        isAutoSensitivity ? 'bg-brand-500' : 'bg-dark-600'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                          isAutoSensitivity ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {!isAutoSensitivity && (
-                    <div className="bg-dark-950/60 p-3.5 rounded-xl border border-dark-700 space-y-2 animate-fade-in">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[11px] font-bold text-dark-300 uppercase tracking-wider">Próg aktywacji mikrofonu</span>
-                        <span className="font-mono text-brand-400 font-bold">{sensitivityThreshold}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="80"
-                        value={sensitivityThreshold}
-                        onChange={(e) => updateAudioProcessingSettings({ sensitivityThreshold: e.target.value })}
-                        className="w-full accent-brand-500 h-1.5 bg-dark-700 rounded-lg appearance-none cursor-pointer"
-                      />
-                      <p className="text-[10px] text-dark-400">
-                        Poniżej żółtej kreski na pasku testu dźwięk jest wyciszany, powyżej — przesyłany do rozmówców.
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
 
               {/* SEKCJA TESTU MIKROFONU (ODSŁUCH NA ŻYWO) */}
@@ -636,7 +848,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
                     }`}
                   >
                     {isMicTesting ? <MicOff size={15} /> : <Mic size={15} />}
-                    <span>{isMicTesting ? 'Zatrzymaj test' : 'Test mikrofonu'}</span>
+                    <span>{isMicTesting ? 'Zatrzymaj test' : 'Testuj mikrofon'}</span>
                   </button>
 
                   {/* Pasek segmentowy z pionowych kresek */}
@@ -658,7 +870,7 @@ export const ProfileSettingsModal = ({ isOpen, onClose, onOpenInstallPwa }) => {
 
                       let activeColor = 'bg-emerald-500 shadow-sm shadow-emerald-500/50';
                       if (!isAboveGate) {
-                        activeColor = 'bg-dark-500'; // poniżej bramki szumów
+                        activeColor = 'bg-dark-500';
                       } else if (idx >= 24 && idx < 30) {
                         activeColor = 'bg-yellow-400 shadow-sm shadow-yellow-400/50';
                       } else if (idx >= 30) {

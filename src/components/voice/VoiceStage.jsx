@@ -18,7 +18,7 @@ import { UserAvatar } from '../common/UserAvatar';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 
-export const VoiceStage = () => {
+export const VoiceStage = ({ onOpenUserProfile }) => {
   const { user } = useAuth();
   const {
     activeVoiceChannel,
@@ -213,11 +213,17 @@ export const VoiceStage = () => {
                 return (
                   <div
                     key={pUser.id || pUser.socketId}
-                    className={`aspect-video bg-dark-800/90 rounded-2xl p-4 flex flex-col items-center justify-center relative border transition-all shadow-md group ${
+                    onClick={() => {
+                      if (onOpenUserProfile && pUser.id) {
+                        onOpenUserProfile(pUser.id);
+                      }
+                    }}
+                    className={`aspect-video bg-dark-800/90 rounded-2xl p-4 flex flex-col items-center justify-center relative border transition-all shadow-md group cursor-pointer ${
                       isSpeaking
                         ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.02]'
-                        : 'border-dark-700 hover:border-dark-600'
+                        : 'border-dark-700 hover:border-brand-500'
                     }`}
+                    title="Kliknij, aby otworzyć profil użytkownika"
                   >
                     <UserAvatar
                       user={pUser}
@@ -227,7 +233,7 @@ export const VoiceStage = () => {
                     />
                     
                     <div className="mt-2 text-center truncate max-w-[85%]">
-                      <div className="text-xs font-bold text-white truncate">
+                      <div className="text-xs font-bold text-white truncate group-hover:text-brand-400 transition-colors">
                         {pUser.displayName || pUser.username}
                       </div>
                       <div className="text-[10px] text-dark-400 truncate">
@@ -256,7 +262,7 @@ export const VoiceStage = () => {
               </div>
               <button
                 onClick={startScreenShare}
-                className="px-4 py-2 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center space-x-2"
+                className="px-4 py-2 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center space-x-2 cursor-pointer"
               >
                 <MonitorUp size={16} />
                 <span>Rozpocznij udostępnianie ekranu (Stream)</span>
@@ -275,9 +281,15 @@ export const VoiceStage = () => {
               return (
                 <div
                   key={pUser.id || pUser.socketId}
-                  className={`h-full aspect-video bg-dark-800 rounded-xl p-2 flex flex-col items-center justify-center relative border transition-all flex-shrink-0 ${
+                  onClick={() => {
+                    if (onOpenUserProfile && pUser.id) {
+                      onOpenUserProfile(pUser.id);
+                    }
+                  }}
+                  className={`h-full aspect-video bg-dark-800 rounded-xl p-2 flex flex-col items-center justify-center relative border transition-all flex-shrink-0 cursor-pointer hover:border-brand-500 ${
                     isSpeaking ? 'border-emerald-500 ring-1 ring-emerald-500' : 'border-dark-700'
                   }`}
+                  title="Kliknij, aby otworzyć profil użytkownika"
                 >
                   <UserAvatar user={pUser} size="sm" isSpeaking={isSpeaking} showStatus={false} />
                   <span className="text-[10px] text-white truncate max-w-full mt-1 font-semibold">

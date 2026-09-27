@@ -16,7 +16,8 @@ export const ChatArea = ({
   serverMembers = [],
   onToggleMobileSidebar,
   onToggleMobileMembers,
-  mobilePane = 'chat'
+  mobilePane = 'chat',
+  onOpenUserProfile
 }) => {
   const { user } = useAuth();
   const { socket, userStatuses } = useSocket();
@@ -257,17 +258,30 @@ export const ChatArea = ({
                 className="flex items-start space-x-3 p-1 rounded-md hover:bg-dark-600/30 transition-colors group cursor-pointer"
               >
                 <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onOpenUserProfile && author?.id) {
+                      onOpenUserProfile(author.id);
+                    }
+                  }}
                   onContextMenu={(e) => {
                     e.stopPropagation();
                     handleUserRightClick(e, author);
                   }}
-                  className="cursor-pointer"
+                  className="cursor-pointer hover:opacity-85 transition-opacity"
+                  title="Kliknij, aby otworzyć profil"
                 >
                   <UserAvatar user={author} size="md" showStatus={false} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center space-x-2">
                     <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onOpenUserProfile && author?.id) {
+                          onOpenUserProfile(author.id);
+                        }
+                      }}
                       onContextMenu={(e) => {
                         e.stopPropagation();
                         handleUserRightClick(e, author);
@@ -363,12 +377,14 @@ export const ChatArea = ({
                   key={member.id}
                   onContextMenu={(e) => handleUserRightClick(e, member)}
                   onClick={() => {
-                    if (member.id !== user?.id && onSelectDmUser) {
+                    if (onOpenUserProfile) {
+                      onOpenUserProfile(member.id);
+                    } else if (member.id !== user?.id && onSelectDmUser) {
                       onSelectDmUser(member);
                     }
                   }}
                   className="flex items-center space-x-2.5 px-2 py-1.5 rounded-md hover:bg-dark-700/60 cursor-pointer transition-colors group"
-                  title={`${member.displayName || member.username} (Prawy klik dla opcji)`}
+                  title={`${member.displayName || member.username} (Kliknij profil / Prawy klik dla opcji)`}
                 >
                   <UserAvatar user={member} size="sm" statusOverride={status} />
                   <div className="min-w-0 flex-1">
@@ -407,6 +423,20 @@ export const ChatArea = ({
               <div className="text-[10px] text-dark-400">@{userContextMenu.targetUser.username}</div>
             </div>
           </div>
+
+          {/* Zobacz Profil */}
+          {onOpenUserProfile && (
+            <button
+              onClick={() => {
+                onOpenUserProfile(userContextMenu.targetUser.id);
+                setUserContextMenu(null);
+              }}
+              className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-brand-400 hover:bg-brand-500 hover:text-white rounded-lg transition-colors font-medium"
+            >
+              <Users size={14} />
+              <span>Zobacz profil</span>
+            </button>
+          )}
 
           {/* Wiadomość prywatna */}
           {userContextMenu.targetUser.id !== user?.id && (

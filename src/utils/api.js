@@ -35,6 +35,7 @@ export const api = {
   // Users & Profile
   getAllUsers: () => request('/users'),
   getFriends: () => request('/users/friends'),
+  getUserProfile: (userId) => request(`/users/${userId}/profile`),
   sendFriendRequest: (username) => request('/users/friends/request', { method: 'POST', body: JSON.stringify({ username }) }),
   acceptFriendRequest: (senderId, requestId) => request('/users/friends/accept', { method: 'POST', body: JSON.stringify({ senderId, requestId }) }),
   declineFriendRequest: (senderId, requestId) => request('/users/friends/decline', { method: 'POST', body: JSON.stringify({ senderId, requestId }) }),

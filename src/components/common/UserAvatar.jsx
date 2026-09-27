@@ -32,20 +32,30 @@ export const UserAvatar = ({
   const status = statusOverride || user?.status || 'offline';
   const avatarColor = user?.avatarColor || '#5865f2';
   const avatarEmoji = user?.avatarEmoji || '👤';
+  const avatarUrl = user?.avatarUrl;
   const initial = user?.displayName ? user.displayName.charAt(0).toUpperCase() : (user?.username ? user.username.charAt(0).toUpperCase() : '?');
 
   return (
     <div className={`relative inline-flex items-center justify-center flex-shrink-0 select-none ${className}`}>
       {/* Obwódka mówienia (Zielony puls) */}
       <div
-        className={`rounded-full flex items-center justify-center font-bold text-white transition-all duration-150 ${sizeClasses[size]} ${
+        className={`rounded-full flex items-center justify-center font-bold text-white transition-all duration-150 overflow-hidden ${sizeClasses[size]} ${
           isSpeaking
             ? 'ring-4 ring-emerald-500 ring-offset-2 ring-offset-dark-800 animate-pulse-glow'
             : ''
         }`}
         style={{ backgroundColor: avatarColor }}
       >
-        {avatarEmoji && avatarEmoji !== '👤' ? (
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={user?.displayName || user?.username || 'Avatar'}
+            className="w-full h-full object-cover rounded-full"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : avatarEmoji && avatarEmoji !== '👤' ? (
           <span className="leading-none">{avatarEmoji}</span>
         ) : (
           <span>{initial}</span>

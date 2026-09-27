@@ -73,17 +73,19 @@ router.delete('/friends/:friendId', authenticateJWT, (req, res) => {
   res.json({ success: true });
 });
 
-// Aktualizacja profilu (zmiana nazwy, awatara, statusu, bio)
+// Aktualizacja profilu (zmiana nazwy, awatara, banera, statusu, bio)
 router.patch('/profile', authenticateJWT, (req, res) => {
   try {
-    const { displayName, avatarColor, avatarEmoji, status, customStatus, bio } = req.body;
+    const { displayName, avatarUrl, avatarColor, avatarEmoji, bannerColor, status, customStatus, bio } = req.body;
     const updates = {};
 
     if (displayName !== undefined && displayName.trim()) {
       updates.displayName = displayName.trim();
     }
+    if (avatarUrl !== undefined) updates.avatarUrl = avatarUrl;
     if (avatarColor !== undefined) updates.avatarColor = avatarColor;
     if (avatarEmoji !== undefined) updates.avatarEmoji = avatarEmoji;
+    if (bannerColor !== undefined) updates.bannerColor = bannerColor;
     if (status !== undefined) updates.status = status;
     if (customStatus !== undefined) updates.customStatus = customStatus;
     if (bio !== undefined) updates.bio = bio;
@@ -101,7 +103,26 @@ router.patch('/profile', authenticateJWT, (req, res) => {
   }
 });
 
-// Pobierz profil pojedynczego użytkownika
+// Pobierz profil pojedynczego użytkownika z relacjami (wspólne serwery i wspólni znajomi)
+router.get('/:id/profile', authenticateJWT, (req, res) => {
+  const targetUser = db.findUserById(req.params.id);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'Użytkownik nie istnieje.' });
+  }
+  const { passwordHash: _, ...safeUser } = targetUser;
+  const mutualServers = db.getMutualServers(req.user.id, targetUser.id);
+  const mutualFriends = db.getMutualFriends(req.user.id, targetUser.id);
+  const friendshipRelation = db.getFriendshipRelation(req.user.id, targetUser.id);
+
+  res.json({
+    user: safeUser,
+    mutualServers,
+    mutualFriends,
+    friendshipRelation
+  });
+});
+
+// Pobierz podstawowy profil pojedynczego użytkownika
 router.get('/:id', authenticateJWT, (req, res) => {
   const user = db.findUserById(req.params.id);
   if (!user) {

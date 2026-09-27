@@ -5,7 +5,7 @@ import { useVoice } from '../../context/VoiceContext';
 import { useSocket } from '../../context/SocketContext';
 import { UserAvatar } from './UserAvatar';
 
-export const BottomUserBar = ({ onOpenSettings }) => {
+export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
   const { user, updateProfile, logout } = useAuth();
   const { socket } = useSocket();
   const {
@@ -170,6 +170,19 @@ export const BottomUserBar = ({ onOpenSettings }) => {
           </div>
 
           <div className="mt-2 pt-1 border-t border-dark-700 space-y-0.5">
+            {onOpenUserProfile && (
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  onOpenUserProfile(user.id);
+                }}
+                className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-brand-400 hover:bg-dark-700 hover:text-white rounded-lg transition-colors font-medium"
+              >
+                <User size={14} />
+                <span>Mój profil (Podgląd)</span>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 setShowProfileMenu(false);
@@ -177,8 +190,8 @@ export const BottomUserBar = ({ onOpenSettings }) => {
               }}
               className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors"
             >
-              <User size={14} />
-              <span>Edytuj profil</span>
+              <Settings size={14} />
+              <span>Edytuj profil i ustawienia</span>
             </button>
 
             <button

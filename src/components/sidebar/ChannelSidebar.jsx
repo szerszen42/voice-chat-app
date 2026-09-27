@@ -17,7 +17,8 @@ export const ChannelSidebar = ({
   onOpenSettings,
   onLeaveServer,
   onDeleteServer,
-  onOpenInstallPwa
+  onOpenInstallPwa,
+  onOpenUserProfile
 }) => {
   const { user } = useAuth();
   const { joinVoiceChannel, activeVoiceChannel, speakingUsers } = useVoice();
@@ -292,7 +293,14 @@ export const ChannelSidebar = ({
                         return (
                           <div
                             key={u.id}
-                            className="flex items-center space-x-2 py-0.5 px-1.5 rounded hover:bg-dark-700/40 text-xs text-dark-300"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onOpenUserProfile) {
+                                onOpenUserProfile(u.id);
+                              }
+                            }}
+                            className="flex items-center space-x-2 py-0.5 px-1.5 rounded hover:bg-dark-700/60 cursor-pointer text-xs text-dark-300 hover:text-white transition-colors"
+                            title="Kliknij, aby otworzyć profil"
                           >
                             <UserAvatar
                               user={u}
@@ -356,7 +364,7 @@ export const ChannelSidebar = ({
       )}
 
       {/* Dolny pasek profilu i ustawień */}
-      <BottomUserBar onOpenSettings={onOpenSettings} />
+      <BottomUserBar onOpenSettings={onOpenSettings} onOpenUserProfile={onOpenUserProfile} />
     </div>
   );
 };

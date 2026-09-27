@@ -25,7 +25,8 @@ export const FriendsView = ({
   allUsers = [],
   onSelectDmUser,
   onRefreshFriends,
-  onOpenMobileSidebar
+  onOpenMobileSidebar,
+  onOpenUserProfile
 }) => {
   const [activeTab, setActiveTab] = useState('online'); // 'online' | 'all' | 'pending' | 'add'
   const [friendUsernameInput, setFriendUsernameInput] = useState('');
@@ -453,12 +454,24 @@ export const FriendsView = ({
                       key={f.id}
                       className="p-2.5 bg-dark-800/60 hover:bg-dark-800 border border-dark-600/30 rounded-xl flex items-center justify-between transition-all group"
                     >
-                      <div
-                        onClick={() => onSelectDmUser(f)}
-                        className="flex items-center space-x-3 min-w-0 cursor-pointer flex-1"
-                      >
-                        <UserAvatar user={f} size="md" statusOverride={status} />
-                        <div className="min-w-0">
+                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                        <div
+                          onClick={() => {
+                            if (onOpenUserProfile) {
+                              onOpenUserProfile(f.id);
+                            } else {
+                              onSelectDmUser(f);
+                            }
+                          }}
+                          className="cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0"
+                          title="Zobacz profil"
+                        >
+                          <UserAvatar user={f} size="md" statusOverride={status} />
+                        </div>
+                        <div
+                          onClick={() => onSelectDmUser(f)}
+                          className="min-w-0 cursor-pointer flex-1"
+                        >
                           <div className="text-sm font-bold text-white truncate group-hover:text-brand-500 transition-colors">
                             {f.displayName || f.username}
                           </div>

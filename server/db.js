@@ -392,6 +392,44 @@ class JSONDatabase {
     }
     this.save();
   }
+
+  // --- Wspólne serwery i Wspólni znajomi (Discord-style User Profile) ---
+  getMutualServers(userAId, userBId) {
+    if (!this.data.servers) return [];
+    return this.data.servers
+      .filter(s => Array.isArray(s.members) && s.members.includes(userAId) && s.members.includes(userBId))
+      .map(s => ({
+        id: s.id,
+        name: s.name,
+        icon: s.icon,
+        description: s.description,
+        membersCount: s.members.length
+      }));
+  }
+
+  getMutualFriends(userAId, userBId) {
+    if (userAId === userBId) return [];
+    const friendsA = this.getFriendsForUser(userAId);
+    const friendsB = this.getFriendsForUser(userBId);
+    const friendBIds = new Set(friendsB.map(f => f.id));
+    return friendsA.filter(f => friendBIds.has(f.id));
+  }
+
+  getFriendshipRelation(userAId, userBId) {
+    if (userAId === userBId) return 'self';
+    if (!this.data.friendships) return 'none';
+    const f = this.data.friendships.find(rel =>
+      (rel.user1Id === userAId && rel.user2Id === userBId) ||
+      (rel.user1Id === userBId && rel.user2Id === userAId)
+    );
+    if (!f) return 'none';
+    if (f.status === 'accepted') return 'friends';
+    if (f.status === 'pending') {
+      const requester = f.requesterId || f.user1Id;
+      return requester === userAId ? 'pending_outgoing' : 'pending_incoming';
+    }
+    return 'none';
+  }
 }
 
 export const db = new JSONDatabase();

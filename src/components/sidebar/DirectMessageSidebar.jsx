@@ -15,7 +15,8 @@ export const DirectMessageSidebar = ({
   onSelectDmUser,
   onOpenFriendsView,
   onOpenSettings,
-  onOpenInstallPwa
+  onOpenInstallPwa,
+  onOpenUserProfile
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showUserSearch, setShowUserSearch] = useState(false);
@@ -245,6 +246,19 @@ export const DirectMessageSidebar = ({
             </div>
           </div>
 
+          {onOpenUserProfile && (
+            <button
+              onClick={() => {
+                onOpenUserProfile(contextMenu.user.id);
+                setContextMenu(null);
+              }}
+              className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-brand-400 hover:bg-brand-500 hover:text-white rounded-lg transition-colors font-medium"
+            >
+              <Users size={14} />
+              <span>Zobacz profil</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               onSelectDmUser(contextMenu.user);
@@ -284,7 +298,7 @@ export const DirectMessageSidebar = ({
       )}
 
       {/* Dolny pasek użytkownika */}
-      <BottomUserBar onOpenSettings={onOpenSettings} />
+      <BottomUserBar onOpenSettings={onOpenSettings} onOpenUserProfile={onOpenUserProfile} />
     </div>
   );
 };
