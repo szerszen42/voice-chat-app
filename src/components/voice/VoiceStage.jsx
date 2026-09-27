@@ -12,7 +12,8 @@ import {
   MonitorUp, 
   MonitorOff, 
   Radio, 
-  Sparkles 
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { useVoice } from '../../context/VoiceContext';
@@ -91,6 +92,20 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
     }
   }, [activeStream?.stream]);
 
+  const handleLeaveVoice = () => {
+    leaveVoiceChannel(true);
+    if (onSelectDefaultChannel) {
+      onSelectDefaultChannel();
+    }
+  };
+
+  // Automatyczne natychmiastowe przejście do czatu po rozłączeniu (eliminuje czarny ekran)
+  useEffect(() => {
+    if (!activeVoiceChannel && onSelectDefaultChannel) {
+      onSelectDefaultChannel();
+    }
+  }, [activeVoiceChannel, onSelectDefaultChannel]);
+
   // Zabezpieczenie przed czarnym ekranem po rozłączeniu się z głosu
   if (!activeVoiceChannel) {
     return (
@@ -100,12 +115,10 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
         </div>
         <h3 className="text-base font-bold text-white mb-1">Rozłączono z kanałem głosowym</h3>
         <p className="text-xs text-dark-400 mb-5 max-w-xs leading-relaxed">
-          Opuściłeś pokój rozmów. Możesz wrócić do czatu tekstowego lub wybrać inny kanał na serwerze.
+          Opuściłeś pokój rozmów. Wracam do czatu tekstowego...
         </p>
         <button
-          onClick={() => {
-            if (onSelectDefaultChannel) onSelectDefaultChannel();
-          }}
+          onClick={handleLeaveVoice}
           className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-brand-500/25 transition-all cursor-pointer"
         >
           Przejdź do czatu tekstowego
@@ -127,8 +140,8 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
 
   // Lista uczestników kanału głosowego (gwarantuje, że obecny użytkownik zawsze widzi siebie na scenie)
   const displayParticipants = useMemo(() => {
-    let list = [...voiceUsers];
-    const hasSelf = list.some(p => (p.user?.id || p.id) === user?.id);
+    let list = [...(voiceUsers || [])];
+    const hasSelf = list.some(p => (p?.user?.id || p?.id) === user?.id);
     if (!hasSelf && user) {
       list.push({
         user,
@@ -154,7 +167,7 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
           </div>
           <div className="min-w-0">
             <div className="text-xs font-bold text-white truncate flex items-center space-x-2">
-              <span>{activeVoiceChannel.channelName}</span>
+              <span>{activeVoiceChannel?.channelName || 'Pokój rozmów'}</span>
               {allStreams.length > 0 && (
                 <span className="px-1.5 py-0.2 bg-red-600 text-white rounded text-[10px] font-bold uppercase tracking-wider animate-pulse flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
@@ -170,6 +183,18 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
 
         {/* PRZYCISKI KONTROLNE GŁOSU I STREAMU */}
         <div className="flex items-center space-x-2">
+          {/* Przycisk powrotu do czatu tekstowego */}
+          {onSelectDefaultChannel && (
+            <button
+              onClick={onSelectDefaultChannel}
+              className="px-2.5 py-1.5 bg-dark-800 hover:bg-dark-700 text-dark-200 hover:text-white rounded-lg transition-colors text-xs font-semibold flex items-center space-x-1"
+              title="Przejdź do czatu tekstowego i rozmawiaj w tle"
+            >
+              <MessageSquare size={15} />
+              <span className="hidden sm:inline">Czat</span>
+            </button>
+          )}
+
           {/* Przycisk Udostępniania Ekranu (Stream) */}
           <button
             onClick={isScreenSharing ? stopScreenShare : startScreenShare}
@@ -199,7 +224,7 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
 
           {/* Przycisk Rozłączenia */}
           <button
-            onClick={() => leaveVoiceChannel(true)}
+            onClick={handleLeaveVoice}
             className="p-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg transition-colors"
             title="Opuść kanał głosowy"
           >
@@ -289,14 +314,15 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
           /* BRAK STREAMU: SIATKA KAFLI UCZESTNIKÓW W STYLU DISCORDA */
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 max-w-4xl w-full">
-              {displayParticipants.map((participant) => {
-                const pUser = participant.user || participant;
-                const isSpeaking = speakingUsers.has(pUser.id);
-                const isCurrent = pUser.id === user?.id;
+              {displayParticipants.map((participant, pIdx) => {
+                const pUser = participant?.user || participant || {};
+                if (!pUser?.id && !pUser?.username) return null;
+                const isSpeaking = pUser?.id ? speakingUsers.has(pUser.id) : false;
+                const isCurrent = pUser?.id && user?.id ? pUser.id === user.id : false;
 
                 return (
                   <div
-                    key={pUser.id || pUser.socketId}
+                    key={pUser.id || pUser.socketId || pIdx}
                     onClick={() => {
                       if (onOpenUserProfile && pUser.id) {
                         onOpenUserProfile(pUser.id);
@@ -318,7 +344,7 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
                     
                     <div className="mt-2 text-center truncate max-w-[85%]">
                       <div className="text-xs font-bold text-white truncate group-hover:text-brand-400 transition-colors">
-                        {pUser.displayName || pUser.username}
+                        {pUser.displayName || pUser.username || 'Użytkownik'}
                       </div>
                       <div className="text-[10px] text-dark-400 truncate">
                         {isSpeaking ? '🟢 Mówi...' : (isCurrent && isMuted ? '🔴 Wyciszony' : 'Wyciszony')}
@@ -387,7 +413,7 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
       </div>
 
       {/* DOLNY PASEK KONTROLEK AUDIO DLA KANAŁU (Podniesiony na telefonach dla wygody) */}
-      <div className="min-h-[76px] sm:min-h-[60px] px-4 pt-2 pb-7 sm:pb-3 bg-dark-900 border-t border-dark-950/60 flex items-center justify-center space-x-4 z-10">
+      <div className="min-h-[84px] sm:min-h-[60px] px-4 pt-2 pb-safe-bottom sm:pb-3 bg-dark-900 border-t border-dark-950/60 flex items-center justify-center space-x-4 z-10">
         <button
           onClick={toggleMute}
           className={`p-3 sm:p-2.5 rounded-full transition-all active:scale-95 shadow ${
@@ -425,7 +451,7 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
         </button>
 
         <button
-          onClick={() => leaveVoiceChannel(true)}
+          onClick={handleLeaveVoice}
           className="p-3 sm:p-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all hover:scale-105 active:scale-95"
           title="Rozłącz się"
         >

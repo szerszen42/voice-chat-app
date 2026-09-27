@@ -25,11 +25,23 @@
     border-radius: 4px;
   }
   /* Safe Area / Mobile insets */
+  .pt-safe-top {
+    padding-top: max(2rem, env(safe-area-inset-top, 2rem));
+  }
+  .pt-safe {
+    padding-top: max(1.75rem, env(safe-area-inset-top, 1.75rem));
+  }
+  .pb-safe-bottom {
+    padding-bottom: max(2.25rem, env(safe-area-inset-bottom, 2.25rem));
+  }
   .pb-safe {
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.25rem));
+    padding-bottom: max(1.75rem, env(safe-area-inset-bottom, 1.75rem));
   }
   .pb-safe-sm {
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 0.75rem));
+  }
+  .mb-safe-bottom {
+    margin-bottom: max(2rem, env(safe-area-inset-bottom, 2rem));
   }
   .mb-safe {
     margin-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.25rem));

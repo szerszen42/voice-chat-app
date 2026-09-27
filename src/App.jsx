@@ -460,7 +460,7 @@ export const App = () => {
 
   return (
     <div
-      className="flex h-screen w-screen bg-dark-900 overflow-hidden select-none relative"
+      className="flex h-screen w-screen bg-dark-900 overflow-hidden select-none relative pt-safe-top md:pt-0"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -552,7 +552,7 @@ export const App = () => {
             onOpenMobileSidebar={() => setMobilePane(prev => prev === 'sidebar' ? 'chat' : 'sidebar')}
             onOpenUserProfile={handleOpenUserProfile}
           />
-        ) : activeView === 'server' && activeChannel?.type === 'voice' ? (
+        ) : activeView === 'server' && activeChannel?.type === 'voice' && activeVoiceChannel ? (
           <VoiceStage
             onOpenUserProfile={handleOpenUserProfile}
             onSelectDefaultChannel={() => {
@@ -563,7 +563,13 @@ export const App = () => {
         ) : (
           <ChatArea
             server={activeServer}
-            channel={activeView === 'server' ? activeChannel : null}
+            channel={
+              activeView === 'server'
+                ? (activeChannel?.type === 'text'
+                    ? activeChannel
+                    : ((activeServer?.channels || []).find(c => c.type === 'text') || null))
+                : null
+            }
             dmUser={activeView === 'dm' ? activeDmUser : null}
             messages={messages}
             onSendMessage={handleSendMessage}

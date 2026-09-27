@@ -439,6 +439,7 @@ export const ChatArea = ({
         type="file"
         ref={fileInputRef}
         multiple
+        accept="image/*,video/*,audio/*,application/*,text/*"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -496,7 +497,13 @@ export const ChatArea = ({
 
           {server && (
             <button
-              onClick={() => setShowMembersList(!showMembersList)}
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  onToggleMobileMembers();
+                } else {
+                  setShowMembersList(!showMembersList);
+                }
+              }}
               className={`p-1.5 rounded-lg transition-colors ${
                 showMembersList ? 'text-white bg-dark-600' : 'text-dark-400 hover:text-white'
               }`}
@@ -532,11 +539,11 @@ export const ChatArea = ({
 
             {/* Lista wiadomości */}
             {messages.map((msg, index) => {
-              const author = msg.user || (msg.senderId === user?.id ? user : dmUser);
-              const authorHighestRole = server?.roles && server?.memberRoles?.[author?.id]
+              const author = msg?.user || (msg?.senderId === user?.id ? user : dmUser);
+              const authorHighestRole = (server?.roles && author?.id && server?.memberRoles?.[author.id])
                 ? server.roles
-                    .filter(r => (server.memberRoles[author.id] || []).includes(r.id))
-                    .sort((a, b) => (b.position || 0) - (a.position || 0))[0]
+                    .filter(r => r && (server.memberRoles[author.id] || []).includes(r.id))
+                    .sort((a, b) => (b?.position || 0) - (a?.position || 0))[0]
                 : null;
 
               const timeStr = msg.createdAt
@@ -738,7 +745,7 @@ export const ChatArea = ({
           )}
 
           {/* POLE WPROWADZANIA WIADOMOŚCI */}
-          <div className="px-3 sm:px-4 pb-7 sm:pb-4 select-none relative">
+          <div className="px-3 sm:px-4 pb-safe-bottom sm:pb-4 select-none relative">
             
             {/* Popup wyboru Emoji */}
             {showEmojiPicker && (
@@ -811,10 +818,10 @@ export const ChatArea = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700/80 rounded-lg transition-colors mr-1 cursor-pointer flex-shrink-0"
+                  className="p-2 sm:p-1.5 text-dark-300 hover:text-white hover:bg-dark-700/80 active:scale-95 rounded-lg transition-all mr-1 cursor-pointer flex-shrink-0"
                   title="Dodaj załącznik (Zdjęcie, Film, Plik)"
                 >
-                  <Paperclip size={18} />
+                  <Paperclip size={20} />
                 </button>
 
                 <textarea
@@ -877,9 +884,9 @@ export const ChatArea = ({
           </div>
         </div>
 
-        {/* 3. Prawy pasek członków serwera */}
+        {/* 3. Prawy pasek członków serwera (Tylko na komputerze / dużym ekranie) */}
         {server && showMembersList && (
-          <div className="w-56 bg-dark-800 border-l border-dark-900/60 p-3 flex flex-col h-full overflow-hidden flex-shrink-0">
+          <div className="hidden md:flex w-56 bg-dark-800 border-l border-dark-900/60 p-3 flex-col h-full overflow-hidden flex-shrink-0">
             <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin">
               {memberGroups.map((group) => (
                 <div key={group.id} className="space-y-0.5">

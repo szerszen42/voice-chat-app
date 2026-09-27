@@ -373,7 +373,11 @@ export const ChannelSidebar = ({
                   return;
                 }
                 joinVoiceChannel(channel, server.id);
-                if (onSelectChannel) onSelectChannel(channel);
+                // Nie zabieraj użytkownikowi czatu tekstowego – jeśli nie ma aktywnego tekstu, otwórz pierwszy tekstowy
+                const activeIsText = activeChannelId && textChannels.some(tc => tc.id === activeChannelId);
+                if (!activeIsText && textChannels.length > 0 && onSelectChannel) {
+                  onSelectChannel(textChannels[0]);
+                }
               };
 
               return (

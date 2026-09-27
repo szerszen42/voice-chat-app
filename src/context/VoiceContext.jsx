@@ -901,16 +901,22 @@ export const VoiceProvider = ({ children }) => {
       });
     }
 
-    peerConnectionsRef.current.forEach((pc) => pc.close());
+    peerConnectionsRef.current.forEach((pc) => {
+      try {
+        pc.close();
+      } catch (e) {}
+    });
     peerConnectionsRef.current.clear();
     pendingCandidatesRef.current.clear();
 
     audioElementsRef.current.forEach((audio) => {
-      audio.pause();
-      audio.srcObject = null;
-      if (audio.parentNode) {
-        audio.parentNode.removeChild(audio);
-      }
+      try {
+        audio.pause();
+        audio.srcObject = null;
+        if (audio.parentNode) {
+          audio.parentNode.removeChild(audio);
+        }
+      } catch (e) {}
     });
     audioElementsRef.current.clear();
     setRemoteScreenStreams(new Map());

@@ -4,6 +4,7 @@ import { App } from './App';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { VoiceProvider } from './context/VoiceContext';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import './index.css';
 
 // Rejestracja Service Workera dla aplikacji mobilnej PWA
@@ -17,13 +18,15 @@ if ('serviceWorker' in navigator) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>
-      <SocketProvider>
-        <VoiceProvider>
-          <App />
-        </VoiceProvider>
-      </SocketProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <SocketProvider>
+          <VoiceProvider>
+            <App />
+          </VoiceProvider>
+        </SocketProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

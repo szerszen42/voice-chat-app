@@ -102,7 +102,7 @@ export const BottomUserBar = ({ onOpenSettings, onOpenUserProfile }) => {
   ];
 
   return (
-    <div className="bg-dark-900 px-3 pt-2 pb-7 sm:pb-2.5 flex flex-col border-t border-dark-950/40 relative">
+    <div className="bg-dark-900 px-3 pt-2 pb-safe-bottom sm:pb-2.5 flex flex-col border-t border-dark-950/40 relative">
       {/* Pasek aktywnego kanału głosowego (jeśli połączono) */}
       {activeVoiceChannel && (
         <div className="mb-2 px-2.5 py-1.5 bg-dark-800 rounded-lg flex items-center justify-between border border-emerald-500/30">
