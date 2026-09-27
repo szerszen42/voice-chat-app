@@ -52,8 +52,10 @@ export const setupSocketHandlers = (io) => {
       socket.leave(`channel:${channelId}`);
     });
 
-    socket.on('send-message', ({ channelId, serverId, text }) => {
-      if (!currentUserId || !text || !text.trim()) return;
+    socket.on('send-message', ({ channelId, serverId, text, attachments }) => {
+      const hasText = text && text.trim().length > 0;
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      if (!currentUserId || (!hasText && !hasAttachments)) return;
 
       const user = db.findUserById(currentUserId);
       if (!user) return;
@@ -63,7 +65,8 @@ export const setupSocketHandlers = (io) => {
         channelId,
         serverId,
         userId: currentUserId,
-        text: text.trim(),
+        text: (text || '').trim(),
+        attachments: hasAttachments ? attachments : [],
         createdAt: new Date().toISOString()
       };
 
@@ -101,8 +104,10 @@ export const setupSocketHandlers = (io) => {
     });
 
     // --- WIADOMOŚCI PRYWATNE (PV / DM) ---
-    socket.on('send-direct-message', ({ recipientId, text }) => {
-      if (!currentUserId || !recipientId || !text || !text.trim()) return;
+    socket.on('send-direct-message', ({ recipientId, text, attachments }) => {
+      const hasText = text && text.trim().length > 0;
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      if (!currentUserId || !recipientId || (!hasText && !hasAttachments)) return;
 
       const user = db.findUserById(currentUserId);
       if (!user) return;
@@ -111,7 +116,8 @@ export const setupSocketHandlers = (io) => {
         id: `dm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         senderId: currentUserId,
         recipientId,
-        text: text.trim(),
+        text: (text || '').trim(),
+        attachments: hasAttachments ? attachments : [],
         createdAt: new Date().toISOString()
       };
 

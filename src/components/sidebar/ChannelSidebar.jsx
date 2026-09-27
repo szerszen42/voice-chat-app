@@ -42,6 +42,9 @@ export const ChannelSidebar = ({
   // Menu szybkiego dodawania kanału z nagłówka kategorii (LPM)
   const [categoryAddMenu, setCategoryAddMenu] = useState(null); // { x, y }
 
+  // Menu kontekstowe pustego pola pod kanałami (PPM)
+  const [emptyAreaMenu, setEmptyAreaMenu] = useState(null); // { x, y }
+
   const menuRef = useRef(null);
 
   // Zamykanie menu po kliknięciu poza nimi
@@ -51,6 +54,7 @@ export const ChannelSidebar = ({
         setChannelActionMenu(null);
         setVoiceUserMenu(null);
         setCategoryAddMenu(null);
+        setEmptyAreaMenu(null);
       }
     };
     document.addEventListener('click', handleGlobalClick);
@@ -101,6 +105,22 @@ export const ChannelSidebar = ({
       x: e.clientX,
       y: e.clientY,
       channel
+    });
+  };
+
+  // Obsługa PPM w pustej przestrzeni pod kanałami
+  const handleEmptyAreaContextMenu = (e) => {
+    if (e.target.closest('.group\\/user') || e.target.closest('.group') || e.target.closest('button')) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    setChannelActionMenu(null);
+    setVoiceUserMenu(null);
+    setCategoryAddMenu(null);
+    setEmptyAreaMenu({
+      x: Math.min(e.clientX, window.innerWidth - 200),
+      y: Math.min(e.clientY, window.innerHeight - 180)
     });
   };
 
@@ -167,7 +187,7 @@ export const ChannelSidebar = ({
               </button>
             )}
 
-            {/* Ustawienia serwera & Role (dla adminów / właściciela) */}
+            {/* Ustawienia serwera (dla adminów / właściciela) */}
             {(canManageServer || canManageRoles || isOwner) && onOpenEditServer && (
               <button
                 onClick={() => {
@@ -176,8 +196,8 @@ export const ChannelSidebar = ({
                 }}
                 className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-amber-300 hover:bg-dark-700 hover:text-white rounded-lg transition-colors"
               >
-                <Shield size={14} className="text-amber-400" />
-                <span>Ustawienia & Role</span>
+                <Settings size={14} className="text-amber-400" />
+                <span>Ustawienia serwera</span>
               </button>
             )}
 
@@ -235,7 +255,10 @@ export const ChannelSidebar = ({
       )}
 
       {/* 3. Lista Kanałów Tekstowych i Głosowych */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin">
+      <div 
+        onContextMenu={handleEmptyAreaContextMenu}
+        className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin"
+      >
         {/* KANAŁY TEKSTOWE */}
         <div>
           <div className="flex items-center justify-between px-2 pb-1 text-xs font-semibold text-dark-400 uppercase tracking-wider group">
@@ -464,6 +487,63 @@ export const ChannelSidebar = ({
             >
               <Trash2 size={14} />
               <span>Usuń ten kanał</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* MENU KONTEKSTOWE PUSTEGO POLA POD KANAŁAMI (PPM) */}
+      {emptyAreaMenu && (
+        <div
+          ref={menuRef}
+          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[190px] animate-fade-in text-dark-100 space-y-0.5"
+          style={{
+            top: emptyAreaMenu.y,
+            left: emptyAreaMenu.x
+          }}
+        >
+          <div className="px-2.5 py-1 text-[10px] font-bold text-dark-400 uppercase tracking-wider truncate border-b border-dark-800 mb-1">
+            Opcje serwera
+          </div>
+
+          {canManageChannels && (
+            <>
+              <button
+                onClick={() => {
+                  onOpenCreateChannel('text');
+                  setEmptyAreaMenu(null);
+                }}
+                className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors text-left cursor-pointer"
+              >
+                <Plus size={14} className="text-brand-400" />
+                <span>Utwórz kanał tekstowy</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onOpenCreateChannel('voice');
+                  setEmptyAreaMenu(null);
+                }}
+                className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors text-left cursor-pointer"
+              >
+                <Volume2 size={14} className="text-emerald-400" />
+                <span>Utwórz kanał głosowy</span>
+              </button>
+
+              <div className="h-[1px] bg-dark-800 my-1" />
+            </>
+          )}
+
+          {(canManageServer || canManageRoles || isOwner) && onOpenEditServer && (
+            <button
+              onClick={() => {
+                onOpenEditServer(server);
+                setEmptyAreaMenu(null);
+              }}
+              className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-amber-300 hover:bg-dark-700 hover:text-white rounded-lg transition-colors text-left cursor-pointer"
+            >
+              <Settings size={14} className="text-amber-400" />
+              <span>Ustawienia serwera</span>
             </button>
           )}
         </div>

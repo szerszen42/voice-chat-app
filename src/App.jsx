@@ -298,20 +298,24 @@ export const App = () => {
     };
   }, [socket, activeChannel, activeDmUser, activeServerId, user]);
 
-  // Wysyłanie wiadomości
-  const handleSendMessage = (text) => {
-    if (!socket || !text.trim()) return;
+  // Wysyłanie wiadomości z załącznikami
+  const handleSendMessage = (text, attachments = []) => {
+    const hasText = text && text.trim().length > 0;
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    if (!socket || (!hasText && !hasAttachments)) return;
 
     if (activeView === 'server' && activeChannel) {
       socket.emit('send-message', {
         channelId: activeChannel.id,
         serverId: activeServer?.id,
-        text
+        text: (text || '').trim(),
+        attachments
       });
     } else if (activeView === 'dm' && activeDmUser) {
       socket.emit('send-direct-message', {
         recipientId: activeDmUser.id,
-        text
+        text: (text || '').trim(),
+        attachments
       });
     }
   };
@@ -627,6 +631,7 @@ export const App = () => {
         onClose={() => setEditingServer(null)}
         onSave={handleSaveEditedServer}
         onRefreshServer={(id) => selectServer(id || activeServerId)}
+        onDeleteServer={editingServer?.ownerId === user?.id ? handleLeaveOrDeleteServer : null}
       />
 
       <JoinServerModal

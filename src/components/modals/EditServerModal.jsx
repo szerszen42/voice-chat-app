@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Globe, Lock, Shield, Settings, Users, Plus, Trash2, Check, Search, ChevronRight } from 'lucide-react';
+import { 
+  X, Globe, Lock, Shield, Settings, Users, Plus, Trash2, Check, Search, 
+  ChevronRight, Hash, Volume2, Edit2, AlertTriangle, Sparkles 
+} from 'lucide-react';
 import { api } from '../../utils/api';
 import { useSocket } from '../../context/SocketContext';
 import { UserAvatar } from '../common/UserAvatar';
@@ -57,10 +60,17 @@ const PRESET_ROLE_COLORS = [
   '#f1c40f', '#e67e22', '#e74c3c', '#5865f2', '#eb459e', '#57f287'
 ];
 
-export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServer }) => {
+export const EditServerModal = ({ 
+  isOpen, 
+  onClose, 
+  server, 
+  onSave, 
+  onRefreshServer,
+  onDeleteServer 
+}) => {
   const { socket } = useSocket();
 
-  // Aktywna zakładka: 'general' | 'roles' | 'members'
+  // Aktywna zakładka: 'general' | 'roles' | 'channels' | 'members' | 'delete'
   const [activeTab, setActiveTab] = useState('general');
 
   // Stan ustawień ogólnych
@@ -80,11 +90,16 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     permissions: []
   });
 
+  // Stan kanałów
+  const [channels, setChannels] = useState([]);
+  const [editingChannel, setEditingChannel] = useState(null);
+  const [newChannelForm, setNewChannelForm] = useState({ name: '', type: 'text' });
+  const [showAddChannelForm, setShowAddChannelForm] = useState(false);
+
   // Stan członków
   const [members, setMembers] = useState([]);
   const [memberRolesMap, setMemberRolesMap] = useState({});
   const [memberSearch, setMemberSearch] = useState('');
-  const [editingMemberRolesId, setEditingMemberRolesId] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -110,25 +125,13 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
         });
       }
 
+      setChannels(server.channels || []);
       setMembers(server.membersList || []);
       setMemberRolesMap(server.memberRoles || {});
       setError('');
       setSuccessMsg('');
     }
   }, [server, isOpen]);
-
-  // Gdy zmieniamy wybraną rolę w liście
-  const handleSelectRole = (role) => {
-    setSelectedRoleId(role.id);
-    setRoleForm({
-      name: role.name || '',
-      color: role.color || '#99aab5',
-      hoist: Boolean(role.hoist),
-      permissions: role.permissions || []
-    });
-    setError('');
-    setSuccessMsg('');
-  };
 
   if (!isOpen || !server) return null;
 
@@ -165,7 +168,19 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     }
   };
 
-  // Utworzenie nowej roli
+  // --- OBSŁUGA RÓL ---
+  const handleSelectRole = (role) => {
+    setSelectedRoleId(role.id);
+    setRoleForm({
+      name: role.name || '',
+      color: role.color || '#99aab5',
+      hoist: Boolean(role.hoist),
+      permissions: role.permissions || []
+    });
+    setError('');
+    setSuccessMsg('');
+  };
+
   const handleCreateRole = async () => {
     setLoading(true);
     setError('');
@@ -191,7 +206,6 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     }
   };
 
-  // Zapis edytowanej roli
   const handleSaveRole = async () => {
     if (!selectedRoleId) return;
     if (!roleForm.name.trim()) {
@@ -217,7 +231,6 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     }
   };
 
-  // Usunięcie roli
   const handleDeleteRole = async (roleId) => {
     if (!confirm('Czy na pewno chcesz usunąć tę rolę? Zostanie ona odebrana wszystkim członkom.')) return;
 
@@ -243,7 +256,6 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     }
   };
 
-  // Przełączanie uprawnienia w formularzu roli
   const togglePermission = (permId) => {
     setRoleForm(prev => {
       const exists = prev.permissions.includes(permId);
@@ -256,7 +268,7 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     });
   };
 
-  // Przypisanie / odebranie roli członkowi
+  // --- OBSŁUGA CZŁONKÓW ---
   const toggleMemberRole = async (memberId, roleId) => {
     const currentMemberRoles = memberRolesMap[memberId] || [];
     const hasRole = currentMemberRoles.includes(roleId);
@@ -278,6 +290,69 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
     }
   };
 
+  // --- OBSŁUGA KANAŁÓW W USTAWIENIACH ---
+  const handleCreateChannelInside = async (e) => {
+    e.preventDefault();
+    if (!newChannelForm.name.trim()) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.createChannel(server.id, {
+        name: newChannelForm.name.trim().toLowerCase().replace(/\s+/g, '-'),
+        type: newChannelForm.type
+      });
+      setChannels(res.channels || []);
+      setNewChannelForm({ name: '', type: 'text' });
+      setShowAddChannelForm(false);
+      setSuccessMsg('Utworzono kanał!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      if (socket) socket.emit('notify-server-updated', { serverId: server.id });
+      if (onRefreshServer) onRefreshServer(server.id);
+    } catch (err) {
+      setError(err.message || 'Nie udało się utworzyć kanału.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateChannelInside = async (channelId, updates) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.editChannel(server.id, channelId, updates);
+      setChannels(res.channels || []);
+      setEditingChannel(null);
+      setSuccessMsg('Zaktualizowano kanał!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      if (socket) socket.emit('notify-server-updated', { serverId: server.id });
+      if (onRefreshServer) onRefreshServer(server.id);
+    } catch (err) {
+      setError(err.message || 'Nie udało się zaktualizować kanału.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteChannelInside = async (channelId, channelName) => {
+    if (!confirm(`Czy na pewno chcesz usunąć kanał "${channelName}"?`)) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.deleteChannel(server.id, channelId);
+      setChannels(res.channels || []);
+      setSuccessMsg('Usunięto kanał.');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      if (socket) socket.emit('notify-server-updated', { serverId: server.id });
+      if (onRefreshServer) onRefreshServer(server.id);
+    } catch (err) {
+      setError(err.message || 'Nie udało się usunąć kanału.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredMembers = members.filter(m => {
     const q = memberSearch.toLowerCase();
     return (m.displayName || '').toLowerCase().includes(q) || (m.username || '').toLowerCase().includes(q);
@@ -287,356 +362,410 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
   const isSystemRole = selectedRoleId === 'role-owner' || selectedRoleId === 'role-everyone';
 
   return (
-    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 animate-fade-in select-none">
-      <div className="bg-dark-800 border border-dark-600 w-full max-w-3xl h-[88vh] max-h-[680px] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative text-dark-100">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 animate-fade-in select-none">
+      <div className="bg-dark-800 border border-dark-600 w-full max-w-4xl h-[90vh] max-h-[720px] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative text-dark-100">
+        
         {/* Nagłówek okna */}
-        <div className="px-5 py-3.5 border-b border-dark-700 flex items-center justify-between bg-dark-850">
-          <div className="flex items-center space-x-2">
-            <span className="text-xl">{server.icon || '💬'}</span>
+        <div className="px-6 py-4 border-b border-dark-700 flex items-center justify-between bg-dark-850">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl shadow" style={{ backgroundColor: color }}>
+              {icon}
+            </div>
             <div>
-              <h2 className="text-base font-bold text-white leading-tight">{server.name} — Ustawienia</h2>
-              <span className="text-[11px] text-dark-400">Zarządzaj opcjami, rolami i członkami serwera</span>
+              <h2 className="text-base font-bold text-white leading-tight flex items-center space-x-2">
+                <span>{server.name}</span>
+                <span className="text-xs px-2 py-0.5 bg-dark-700 text-dark-300 rounded font-normal">Ustawienia serwera</span>
+              </h2>
+              <span className="text-xs text-dark-400">Dostosuj role, uprawnienia, kanały oraz członków</span>
             </div>
           </div>
-
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-dark-400 hover:text-white hover:bg-dark-700 transition-colors"
+            className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-xl transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Pasek zakładek */}
-        <div className="flex border-b border-dark-700 bg-dark-900/80 px-4">
-          <button
-            onClick={() => setActiveTab('general')}
-            className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === 'general'
-                ? 'border-brand-500 text-brand-400 bg-brand-500/10'
-                : 'border-transparent text-dark-400 hover:text-dark-200'
-            }`}
-          >
-            <Settings size={15} />
-            <span>Przegląd</span>
-          </button>
+        {/* Ciało okna: Lewy pasek nawigacji + Prawa zawartość */}
+        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+          
+          {/* LEWY PASEK ZAKŁADEK W STYLU DISCORDA */}
+          <div className="w-full sm:w-56 bg-dark-850/80 p-3 border-r border-dark-700/80 flex flex-row sm:flex-col gap-1 overflow-x-auto sm:overflow-x-visible flex-shrink-0">
+            <div className="hidden sm:block px-3 py-1.5 text-[11px] font-bold text-dark-400 uppercase tracking-wider">
+              Ustawienia
+            </div>
+            
+            <button
+              type="button"
+              onClick={() => setActiveTab('general')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'general'
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-dark-300 hover:bg-dark-700 hover:text-white'
+              }`}
+            >
+              <Settings size={16} />
+              <span>Przegląd serwera</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('roles')}
-            className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === 'roles'
-                ? 'border-brand-500 text-brand-400 bg-brand-500/10'
-                : 'border-transparent text-dark-400 hover:text-dark-200'
-            }`}
-          >
-            <Shield size={15} />
-            <span>Role serwera ({roles.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('members')}
-            className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === 'members'
-                ? 'border-brand-500 text-brand-400 bg-brand-500/10'
-                : 'border-transparent text-dark-400 hover:text-dark-200'
-            }`}
-          >
-            <Users size={15} />
-            <span>Zarządzanie członkami ({members.length})</span>
-          </button>
-        </div>
-
-        {/* Powiadomienia błędu / sukcesu */}
-        {error && (
-          <div className="mx-4 mt-3 p-2.5 bg-red-500/20 border border-red-500/40 text-red-300 text-xs rounded-lg animate-fade-in">
-            {error}
-          </div>
-        )}
-        {successMsg && (
-          <div className="mx-4 mt-3 p-2.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs rounded-lg animate-fade-in flex items-center space-x-1.5 font-medium">
-            <Check size={14} />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {/* Zawartość zakładek */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 scrollbar-thin">
-          {/* 1. ZAKŁADKA OGÓLNE */}
-          {activeTab === 'general' && (
-            <form onSubmit={handleSaveGeneral} className="space-y-4 max-w-lg mx-auto">
-              <div>
-                <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                  Nazwa serwera *
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Wpisz nazwę serwera..."
-                  className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-brand-500"
-                  required
-                />
+            <button
+              type="button"
+              onClick={() => setActiveTab('roles')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'roles'
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-dark-300 hover:bg-dark-700 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Shield size={16} />
+                <span>Role i uprawnienia</span>
               </div>
+              <span className="text-[10px] px-1.5 py-0.2 bg-dark-900/60 rounded-full font-bold">
+                {roles.length}
+              </span>
+            </button>
 
-              <div>
-                <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                  Opis serwera
-                </label>
-                <input
-                  type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Krótki opis serwera..."
-                  className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-brand-500"
-                />
+            <button
+              type="button"
+              onClick={() => setActiveTab('channels')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'channels'
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-dark-300 hover:bg-dark-700 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Hash size={16} />
+                <span>Kanały serwera</span>
               </div>
+              <span className="text-[10px] px-1.5 py-0.2 bg-dark-900/60 rounded-full font-bold">
+                {channels.length}
+              </span>
+            </button>
 
-              <div>
-                <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                  Widoczność serwera
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsPublic(true)}
-                    className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all ${
-                      isPublic
-                        ? 'border-brand-500 bg-brand-500/15 text-white'
-                        : 'border-dark-700 bg-dark-900/60 text-dark-400 hover:border-dark-600'
-                    }`}
-                  >
-                    <Globe size={22} className={isPublic ? 'text-brand-500 mb-1' : 'mb-1'} />
-                    <span className="text-xs font-bold">Publiczny</span>
-                    <span className="text-[10px] opacity-70">Widoczny w katalogu</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsPublic(false)}
-                    className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all ${
-                      !isPublic
-                        ? 'border-amber-500 bg-amber-500/15 text-white'
-                        : 'border-dark-700 bg-dark-900/60 text-dark-400 hover:border-dark-600'
-                    }`}
-                  >
-                    <Lock size={22} className={!isPublic ? 'text-amber-400 mb-1' : 'mb-1'} />
-                    <span className="text-xs font-bold">Prywatny</span>
-                    <span className="text-[10px] opacity-70">Tylko z kodem zaproszenia</span>
-                  </button>
-                </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('members')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'members'
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-dark-300 hover:bg-dark-700 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Users size={16} />
+                <span>Zarządzanie członkami</span>
               </div>
+              <span className="text-[10px] px-1.5 py-0.2 bg-dark-900/60 rounded-full font-bold">
+                {members.length}
+              </span>
+            </button>
 
-              <div className="grid grid-cols-2 gap-4 pt-1">
-                <div>
-                  <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                    Ikona
-                  </label>
-                  <div className="flex flex-wrap gap-1 bg-dark-900 p-2 rounded-lg border border-dark-700 max-h-24 overflow-y-auto">
-                    {emojiOptions.map((em) => (
-                      <button
-                        key={em}
-                        type="button"
-                        onClick={() => setIcon(em)}
-                        className={`text-lg p-1 rounded hover:bg-dark-700 transition-colors ${
-                          icon === em ? 'bg-dark-600 ring-1 ring-brand-500' : ''
-                        }`}
-                      >
-                        {em}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-dark-300 uppercase tracking-wider mb-1.5">
-                    Kolor tła
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 bg-dark-900 p-2 rounded-lg border border-dark-700">
-                    {colorOptions.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setColor(c)}
-                        className={`w-6 h-6 rounded-full transition-transform ${
-                          color === c ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
-                        }`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-3 flex justify-end">
+            {onDeleteServer && (
+              <>
+                <div className="hidden sm:block my-2 h-[1px] bg-dark-700/60" />
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+                  type="button"
+                  onClick={() => setActiveTab('delete')}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    activeTab === 'delete'
+                      ? 'bg-red-600 text-white shadow-md'
+                      : 'text-red-400 hover:bg-red-500/20 hover:text-red-300'
+                  }`}
                 >
-                  {loading ? 'Zapisywanie...' : 'Zapisz zmiany ogólne'}
+                  <Trash2 size={16} />
+                  <span>Usuń serwer</span>
                 </button>
-              </div>
-            </form>
-          )}
+              </>
+            )}
+          </div>
 
-          {/* 2. ZAKŁADKA ROLE */}
-          {activeTab === 'roles' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
-              {/* Lewa kolumna: Lista ról */}
-              <div className="bg-dark-900/70 border border-dark-700/80 rounded-xl p-3 flex flex-col h-full space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-xs font-bold text-dark-300 uppercase tracking-wider">Role</span>
+          {/* PRAWA ZAWARTOSC AKTYWNEJ ZAKŁADKI */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-dark-800 scrollbar-thin">
+            
+            {/* Powiadomienia o błędzie / sukcesie */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-xl text-xs text-red-300 animate-fade-in flex items-center justify-between">
+                <span>{error}</span>
+                <button onClick={() => setError('')}><X size={14} /></button>
+              </div>
+            )}
+            {successMsg && (
+              <div className="mb-4 p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 animate-fade-in flex items-center justify-between">
+                <span className="flex items-center space-x-1.5">
+                  <Check size={14} />
+                  <span>{successMsg}</span>
+                </span>
+                <button onClick={() => setSuccessMsg('')}><X size={14} /></button>
+              </div>
+            )}
+
+            {/* 1. ZAKŁADKA: PRZEGLĄD (GENERAL) */}
+            {activeTab === 'general' && (
+              <form onSubmit={handleSaveGeneral} className="space-y-5 max-w-xl">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1">Przegląd serwera</h3>
+                  <p className="text-xs text-dark-400">Dostosuj podstawowe dane widoczne dla wszystkich członków.</p>
+                </div>
+
+                {/* Ikona i Kolor */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-dark-300 mb-1.5">
+                      Ikona serwera
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 p-2 bg-dark-900/60 rounded-xl border border-dark-700">
+                      {emojiOptions.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => setIcon(emoji)}
+                          className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all ${
+                            icon === emoji
+                              ? 'bg-brand-500 text-white scale-110 shadow'
+                              : 'hover:bg-dark-700'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-dark-300 mb-1.5">
+                      Kolor przewodni
+                    </label>
+                    <div className="flex flex-wrap gap-2 p-3 bg-dark-900/60 rounded-xl border border-dark-700">
+                      {colorOptions.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setColor(c)}
+                          className={`w-7 h-7 rounded-full transition-transform flex items-center justify-center ${
+                            color === c ? 'ring-2 ring-white scale-110' : 'hover:scale-105'
+                          }`}
+                          style={{ backgroundColor: c }}
+                        >
+                          {color === c && <Check size={14} className="text-white drop-shadow" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nazwa */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-dark-300 mb-1.5">
+                    Nazwa serwera *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="np. Moja Ekipa"
+                    className="w-full bg-dark-900 border border-dark-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+
+                {/* Opis */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-dark-300 mb-1.5">
+                    Opis serwera
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Krótki opis o czym jest ten serwer..."
+                    className="w-full bg-dark-900 border border-dark-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                  />
+                </div>
+
+                {/* Widoczność serwera */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-dark-300 mb-2">
+                    Widoczność w katalogu
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(true)}
+                      className={`p-3 rounded-xl border flex items-center space-x-3 transition-all text-left ${
+                        isPublic
+                          ? 'border-brand-500 bg-brand-500/10 text-white'
+                          : 'border-dark-700 bg-dark-900/60 text-dark-400 hover:border-dark-600'
+                      }`}
+                    >
+                      <Globe size={18} className={isPublic ? 'text-brand-400' : 'text-dark-500'} />
+                      <div>
+                        <div className="text-xs font-bold">Publiczny</div>
+                        <div className="text-[10px] text-dark-400">Widoczny w eksploratorze serwerów</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(false)}
+                      className={`p-3 rounded-xl border flex items-center space-x-3 transition-all text-left ${
+                        !isPublic
+                          ? 'border-amber-500 bg-amber-500/10 text-white'
+                          : 'border-dark-700 bg-dark-900/60 text-dark-400 hover:border-dark-600'
+                      }`}
+                    >
+                      <Lock size={18} className={!isPublic ? 'text-amber-400' : 'text-dark-500'} />
+                      <div>
+                        <div className="text-xs font-bold">Prywatny</div>
+                        <div className="text-[10px] text-dark-400">Tylko na bezpośrednie zaproszenie</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-dark-700 flex justify-end">
                   <button
-                    onClick={handleCreateRole}
+                    type="submit"
                     disabled={loading}
-                    className="flex items-center space-x-1 px-2 py-1 bg-brand-500/20 hover:bg-brand-500 text-brand-300 hover:text-white rounded-md text-[11px] font-bold transition-colors"
+                    className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-lg cursor-pointer flex items-center space-x-2"
                   >
-                    <Plus size={13} />
-                    <span>Nowa</span>
+                    <span>{loading ? 'Zapisywanie...' : 'Zapisz zmiany'}</span>
                   </button>
                 </div>
+              </form>
+            )}
 
-                <div className="flex-1 overflow-y-auto space-y-1 scrollbar-thin">
-                  {roles.map((r) => {
-                    const isSelected = r.id === selectedRoleId;
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => handleSelectRole(r)}
-                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-left text-xs font-semibold transition-colors ${
-                          isSelected
-                            ? 'bg-dark-700 text-white shadow-sm ring-1 ring-brand-500/40'
-                            : 'text-dark-300 hover:bg-dark-800/80 hover:text-white'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-2 truncate">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: r.color || '#99aab5' }}
-                          />
-                          <span className="truncate">{r.name}</span>
-                        </div>
-                        {isSelected && <ChevronRight size={14} className="text-brand-400" />}
-                      </button>
-                    );
-                  })}
+            {/* 2. ZAKŁADKA: ROLE I UPRAWNIENIA (ROLES) */}
+            {activeTab === 'roles' && (
+              <div className="flex flex-col md:flex-row gap-4 h-full">
+                {/* Lewa kolumna: Lista ról */}
+                <div className="w-full md:w-56 bg-dark-900/60 border border-dark-700 rounded-xl p-2.5 flex flex-col flex-shrink-0">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-dark-800">
+                    <span className="text-xs font-bold text-dark-300 uppercase tracking-wider">Role</span>
+                    <button
+                      type="button"
+                      onClick={handleCreateRole}
+                      className="px-2 py-1 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold flex items-center space-x-1 cursor-pointer transition-transform active:scale-95"
+                    >
+                      <Plus size={13} />
+                      <span>Dodaj</span>
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-1 scrollbar-thin">
+                    {roles.map((r) => {
+                      const isSelected = r.id === selectedRoleId;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handleSelectRole(r)}
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-dark-700 text-white border-l-4 border-brand-500 shadow'
+                              : 'text-dark-300 hover:bg-dark-800 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color || '#99aab5' }} />
+                            <span className="truncate">{r.name}</span>
+                          </div>
+                          {r.id === 'role-owner' && <span className="text-[10px]">👑</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              {/* Prawa kolumna (2/3): Edytor wybranej roli */}
-              <div className="md:col-span-2 bg-dark-900/70 border border-dark-700/80 rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto scrollbar-thin">
+                {/* Prawa kolumna: Konfiguracja wybranej roli */}
                 {selectedRole ? (
-                  <>
-                    <div className="flex items-center justify-between border-b border-dark-700/60 pb-3">
-                      <div className="flex items-center space-x-2">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full"
-                          style={{ backgroundColor: roleForm.color }}
-                        />
-                        <h3 className="text-sm font-bold text-white">
-                          Edycja roli: {roleForm.name || 'Bez nazwy'}
-                        </h3>
+                  <div className="flex-1 bg-dark-900/60 border border-dark-700 rounded-xl p-4 overflow-y-auto space-y-4 scrollbar-thin">
+                    <div className="flex items-center justify-between pb-2 border-b border-dark-800">
+                      <div>
+                        <h4 className="text-xs font-bold text-white">Edycja roli: {roleForm.name}</h4>
+                        <span className="text-[10px] text-dark-400">Dostosuj nazwę, kolor i uprawnienia tej roli</span>
                       </div>
-
                       {!isSystemRole && (
                         <button
+                          type="button"
                           onClick={() => handleDeleteRole(selectedRole.id)}
-                          disabled={loading}
-                          className="flex items-center space-x-1.5 px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/20 rounded-md transition-colors font-semibold"
+                          className="px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/20 hover:text-red-300 rounded-lg transition-colors flex items-center space-x-1 cursor-pointer"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                           <span>Usuń rolę</span>
                         </button>
                       )}
                     </div>
 
-                    {/* Nazwa roli i Kolor */}
+                    {/* Nazwa i Kolor roli */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-bold uppercase text-dark-400 mb-1">
                           Nazwa roli
                         </label>
                         <input
                           type="text"
                           value={roleForm.name}
-                          onChange={(e) => setRoleForm(prev => ({ ...prev, name: e.target.value }))}
-                          disabled={selectedRole.id === 'role-everyone'}
-                          placeholder="Wpisz nazwę roli..."
-                          className="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500 disabled:opacity-50"
+                          onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })}
+                          className="w-full bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-bold uppercase text-dark-400 mb-1">
                           Kolor roli
                         </label>
-                        <div className="flex items-center space-x-1.5 bg-dark-800 p-1.5 rounded-lg border border-dark-700">
-                          {PRESET_ROLE_COLORS.slice(0, 7).map((hex) => (
-                            <button
-                              key={hex}
-                              type="button"
-                              onClick={() => setRoleForm(prev => ({ ...prev, color: hex }))}
-                              className={`w-4 h-4 rounded-full transition-transform ${
-                                roleForm.color === hex ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
-                              }`}
-                              style={{ backgroundColor: hex }}
-                            />
-                          ))}
+                        <div className="flex items-center space-x-2">
                           <input
                             type="color"
                             value={roleForm.color}
-                            onChange={(e) => setRoleForm(prev => ({ ...prev, color: e.target.value }))}
-                            className="w-5 h-5 bg-transparent border-0 cursor-pointer ml-auto rounded"
-                            title="Własny kolor"
+                            onChange={(e) => setRoleForm({ ...roleForm, color: e.target.value })}
+                            className="w-8 h-8 rounded border-0 cursor-pointer bg-transparent"
                           />
+                          <div className="flex flex-wrap gap-1">
+                            {PRESET_ROLE_COLORS.slice(0, 7).map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setRoleForm({ ...roleForm, color: c })}
+                                className="w-5 h-5 rounded-full border border-dark-700"
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Opcja Hoist (Grupowanie na liście członków) */}
-                    <div className="flex items-center justify-between p-3 bg-dark-800/70 border border-dark-700/60 rounded-xl">
-                      <div>
-                        <div className="text-xs font-bold text-white">Wyróżniaj członków roli osobno</div>
-                        <div className="text-[10px] text-dark-400">Członkowie z tą rolą pojawią się w osobnej sekcji na liście użytkowników.</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={roleForm.hoist}
-                        onChange={(e) => setRoleForm(prev => ({ ...prev, hoist: e.target.checked }))}
-                        className="w-4 h-4 accent-brand-500 rounded cursor-pointer"
-                      />
-                    </div>
-
                     {/* Uprawnienia */}
                     <div>
-                      <label className="block text-[11px] font-bold text-dark-300 uppercase tracking-wider mb-2">
-                        Uprawnienia serwera ({roleForm.permissions.length})
+                      <label className="block text-[11px] font-bold uppercase text-dark-400 mb-2">
+                        Uprawnienia dla tej roli ({roleForm.permissions.length}/{AVAILABLE_PERMISSIONS.length})
                       </label>
                       <div className="space-y-2">
                         {AVAILABLE_PERMISSIONS.map((perm) => {
                           const isChecked = roleForm.permissions.includes(perm.id) || roleForm.permissions.includes('ADMINISTRATOR');
-                          const isDirectChecked = roleForm.permissions.includes(perm.id);
-
                           return (
                             <div
                               key={perm.id}
                               onClick={() => togglePermission(perm.id)}
-                              className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-colors ${
-                                isDirectChecked
-                                  ? 'bg-brand-500/15 border-brand-500/40 text-white'
-                                  : 'bg-dark-800/40 border-dark-700/60 text-dark-300 hover:bg-dark-800'
+                              className={`p-2.5 rounded-lg border transition-colors cursor-pointer flex items-start justify-between ${
+                                isChecked
+                                  ? 'border-brand-500/60 bg-brand-500/10 text-white'
+                                  : 'border-dark-800 bg-dark-950/60 text-dark-300 hover:border-dark-700'
                               }`}
                             >
                               <div className="pr-3">
                                 <div className="text-xs font-bold text-white">{perm.name}</div>
-                                <div className="text-[10px] text-dark-400 leading-tight">{perm.description}</div>
+                                <div className="text-[10px] text-dark-400 leading-tight mt-0.5">{perm.description}</div>
                               </div>
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={() => {}} // obsłużone przez kliknięcie w kontener
-                                className="w-4 h-4 accent-brand-500 rounded cursor-pointer"
+                                onChange={() => {}}
+                                className="mt-1 rounded text-brand-500 focus:ring-0 cursor-pointer"
                               />
                             </div>
                           );
@@ -649,105 +778,263 @@ export const EditServerModal = ({ isOpen, onClose, server, onSave, onRefreshServ
                         type="button"
                         onClick={handleSaveRole}
                         disabled={loading}
-                        className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+                        className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow transition-all cursor-pointer"
                       >
-                        {loading ? 'Zapisywanie...' : 'Zapisz rolę'}
+                        Zapisz rolę
                       </button>
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <div className="text-center py-12 text-xs text-dark-400">
-                    Wybierz rolę z lewej listy lub utwórz nową.
+                  <div className="flex-1 flex items-center justify-center text-xs text-dark-400">
+                    Wybierz rolę z listy po lewej stronie, aby ją edytować.
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* 3. ZAKŁADKA CZŁONKOWIE & RANGI */}
-          {activeTab === 'members' && (
-            <div className="space-y-3">
-              {/* Wyszukiwarka */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={memberSearch}
-                  onChange={(e) => setMemberSearch(e.target.value)}
-                  placeholder="Szukaj członka serwera..."
-                  className="w-full bg-dark-900 border border-dark-700 rounded-lg pl-9 pr-4 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                />
-                <Search size={15} className="absolute left-3 top-2.5 text-dark-400" />
-              </div>
+            {/* 3. ZAKŁADKA: KANAŁY SERWERA (CHANNELS) */}
+            {activeTab === 'channels' && (
+              <div className="space-y-4 max-w-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white mb-0.5">Kanały serwera</h3>
+                    <p className="text-xs text-dark-400">Zarządzaj kanałami tekstowymi i głosowymi.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddChannelForm(!showAddChannelForm)}
+                    className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow cursor-pointer transition-transform active:scale-95"
+                  >
+                    <Plus size={14} />
+                    <span>Utwórz kanał</span>
+                  </button>
+                </div>
 
-              {/* Lista członków */}
-              <div className="space-y-2">
-                {filteredMembers.map((member) => {
-                  const assignedRoleIds = memberRolesMap[member.id] || [];
-                  const isOwner = server.ownerId === member.id;
-                  const isEditingThis = editingMemberRolesId === member.id;
+                {/* Formularz szybkiego dodawania kanału */}
+                {showAddChannelForm && (
+                  <form onSubmit={handleCreateChannelInside} className="p-3.5 bg-dark-900 border border-brand-500/50 rounded-xl space-y-3 animate-fade-in shadow-lg">
+                    <div className="text-xs font-bold text-white flex items-center space-x-1.5">
+                      <Sparkles size={14} className="text-brand-400" />
+                      <span>Nowy kanał</span>
+                    </div>
 
-                  return (
-                    <div
-                      key={member.id}
-                      className="p-3 bg-dark-900/60 border border-dark-700/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                    >
-                      {/* Avatar i Nick */}
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <UserAvatar user={member} size="sm" />
-                        <div className="min-w-0">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-xs font-bold text-white truncate">
-                              {member.displayName || member.username}
-                            </span>
-                            {isOwner && (
-                              <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded font-bold">
-                                👑 Właściciel
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-dark-400">@{member.username}</span>
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-dark-400 uppercase mb-1">Nazwa kanału</label>
+                        <input
+                          type="text"
+                          required
+                          value={newChannelForm.name}
+                          onChange={(e) => setNewChannelForm({ ...newChannelForm, name: e.target.value })}
+                          placeholder="np. pogaduchy"
+                          className="w-full bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        />
                       </div>
-
-                      {/* Tagi przypisanych ról & szybkie nadawanie */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {roles.map((r) => {
-                          if (r.id === 'role-everyone') return null;
-                          const hasThisRole = assignedRoleIds.includes(r.id) || (isOwner && r.id === 'role-owner');
-
-                          return (
-                            <button
-                              key={r.id}
-                              type="button"
-                              onClick={() => toggleMemberRole(member.id, r.id)}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center space-x-1 ${
-                                hasThisRole
-                                  ? 'border-transparent text-white shadow-sm'
-                                  : 'border-dark-700/80 bg-dark-800/40 text-dark-400 hover:border-dark-600 hover:text-dark-200'
-                              }`}
-                              style={{
-                                backgroundColor: hasThisRole ? (r.color || '#5865f2') : undefined
-                              }}
-                              title={hasThisRole ? `Kliknij, aby odebrać rolę ${r.name}` : `Kliknij, aby nadać rolę ${r.name}`}
-                            >
-                              <span className="truncate">{r.name}</span>
-                              {hasThisRole && <Check size={10} className="stroke-[3]" />}
-                            </button>
-                          );
-                        })}
+                      <div>
+                        <label className="block text-[11px] font-bold text-dark-400 uppercase mb-1">Typ kanału</label>
+                        <select
+                          value={newChannelForm.type}
+                          onChange={(e) => setNewChannelForm({ ...newChannelForm, type: e.target.value })}
+                          className="w-full bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        >
+                          <option value="text">💬 Kanał tekstowy (#)</option>
+                          <option value="voice">🔊 Kanał głosowy (Głos + Ekran)</option>
+                        </select>
                       </div>
                     </div>
-                  );
-                })}
 
-                {filteredMembers.length === 0 && (
-                  <div className="text-center py-8 text-xs text-dark-400">
-                    Nie znaleziono członków pasujących do wyszukiwania.
-                  </div>
+                    <div className="flex items-center justify-end space-x-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddChannelForm(false)}
+                        className="px-3 py-1.5 text-xs text-dark-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                      >
+                        Anuluj
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="px-4 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                      >
+                        Utwórz
+                      </button>
+                    </div>
+                  </form>
                 )}
+
+                {/* Lista kanałów z edycją i usuwaniem */}
+                <div className="space-y-2">
+                  {channels.map((ch) => {
+                    const isEditing = editingChannel?.id === ch.id;
+
+                    return (
+                      <div
+                        key={ch.id}
+                        className="p-3 bg-dark-900/70 border border-dark-700/80 rounded-xl flex items-center justify-between gap-3 transition-colors hover:border-dark-600"
+                      >
+                        <div className="flex items-center space-x-2.5 min-w-0">
+                          <div className={`p-2 rounded-lg ${ch.type === 'voice' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-brand-500/15 text-brand-400'}`}>
+                            {ch.type === 'voice' ? <Volume2 size={16} /> : <Hash size={16} />}
+                          </div>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              defaultValue={ch.name}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleUpdateChannelInside(ch.id, { name: e.target.value.trim() });
+                                if (e.key === 'Escape') setEditingChannel(null);
+                              }}
+                              onBlur={(e) => handleUpdateChannelInside(ch.id, { name: e.target.value.trim() })}
+                              className="bg-dark-950 border border-brand-500 rounded px-2 py-1 text-xs text-white focus:outline-none"
+                            />
+                          ) : (
+                            <div>
+                              <div className="text-xs font-bold text-white flex items-center space-x-1.5">
+                                <span>{ch.name}</span>
+                                <span className="text-[10px] text-dark-400 font-normal">
+                                  ({ch.type === 'voice' ? 'Głosowy' : 'Tekstowy'})
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setEditingChannel(ch)}
+                            className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors cursor-pointer"
+                            title="Zmień nazwę kanału"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          {channels.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteChannelInside(ch.id, ch.name)}
+                              className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-colors cursor-pointer"
+                              title="Usuń ten kanał"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* 4. ZAKŁADKA: ZARZĄDZANIE CZŁONKAMI (MEMBERS) */}
+            {activeTab === 'members' && (
+              <div className="space-y-4 max-w-2xl">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-0.5">Zarządzanie członkami ({members.length})</h3>
+                  <p className="text-xs text-dark-400">Nadawaj lub odbieraj role członkom jednym kliknięciem.</p>
+                </div>
+
+                {/* Wyszukiwarka */}
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
+                  <input
+                    type="text"
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    placeholder="Szukaj członka po nazwie lub nicku..."
+                    className="w-full bg-dark-900 border border-dark-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+
+                {/* Lista członków */}
+                <div className="space-y-2">
+                  {filteredMembers.map((member) => {
+                    const assignedRoleIds = memberRolesMap[member.id] || [];
+                    const isOwner = server.ownerId === member.id;
+
+                    return (
+                      <div
+                        key={member.id}
+                        className="p-3 bg-dark-900/60 border border-dark-700/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                      >
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <UserAvatar user={member} size="sm" />
+                          <div className="min-w-0">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-xs font-bold text-white truncate">
+                                {member.displayName || member.username}
+                              </span>
+                              {isOwner && (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded font-bold">
+                                  👑 Właściciel
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-dark-400">@{member.username}</span>
+                          </div>
+                        </div>
+
+                        {/* Tagi ról */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {roles.map((r) => {
+                            if (r.id === 'role-everyone') return null;
+                            const hasThisRole = assignedRoleIds.includes(r.id) || (isOwner && r.id === 'role-owner');
+
+                            return (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => toggleMemberRole(member.id, r.id)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center space-x-1 cursor-pointer ${
+                                  hasThisRole
+                                    ? 'border-transparent text-white shadow-sm'
+                                    : 'border-dark-700/80 bg-dark-800/40 text-dark-400 hover:border-dark-600 hover:text-dark-200'
+                                }`}
+                                style={{
+                                  backgroundColor: hasThisRole ? (r.color || '#5865f2') : undefined
+                                }}
+                                title={hasThisRole ? `Kliknij, aby odebrać rolę ${r.name}` : `Kliknij, aby nadać rolę ${r.name}`}
+                              >
+                                <span className="truncate">{r.name}</span>
+                                {hasThisRole && <Check size={10} className="stroke-[3]" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 5. ZAKŁADKA: USUŃ SERWER (DELETE) */}
+            {activeTab === 'delete' && onDeleteServer && (
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl space-y-4 max-w-xl">
+                <div className="flex items-center space-x-2 text-red-400 font-bold text-sm">
+                  <AlertTriangle size={18} />
+                  <span>Strefa niebezpieczna</span>
+                </div>
+                <p className="text-xs text-dark-300 leading-relaxed">
+                  Usunięcie serwera jest <strong>nieodwracalne</strong>. Wszystkie kanały, historia wiadomości oraz przypisane role zostaną bezpowrotnie skasowane dla wszystkich członków.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Czy na pewno chcesz BEZPOWROTNIE usunąć serwer "${server.name}"?`)) {
+                      onDeleteServer(server.id);
+                      onClose();
+                    }
+                  }}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg cursor-pointer"
+                >
+                  Usuń serwer bezpowrotnie
+                </button>
+              </div>
+            )}
+
+          </div>
         </div>
       </div>
     </div>
