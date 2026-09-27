@@ -3,9 +3,12 @@
   "appName": "VoiceChat & Community",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https",
+    "url": "https://voice-chat-app-8m36.onrender.com",
     "cleartext": true,
-    "allowNavigation": ["*"]
+    "allowNavigation": [
+      "https://voice-chat-app-8m36.onrender.com",
+      "*.onrender.com"
+    ]
   },
   "android": {
     "allowMixedContent": true,
