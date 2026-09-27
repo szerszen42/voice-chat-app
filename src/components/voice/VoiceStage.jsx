@@ -1,4 +1,3 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Tv, 
   Mic, 
@@ -13,13 +12,15 @@ import {
   MonitorOff, 
   Radio, 
   Sparkles,
-  MessageSquare
+  MessageSquare,
+  ArrowRightLeft,
+  UserPlus
 } from 'lucide-react';
 import { UserAvatar } from '../common/UserAvatar';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 
-export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
+export const VoiceStage = ({ server, onOpenUserProfile, onSelectDefaultChannel }) => {
   const { user } = useAuth();
   const {
     activeVoiceChannel,
@@ -36,13 +37,35 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
     startScreenShare,
     stopScreenShare,
     hasMicPermission,
-    requestMicPermission
+    requestMicPermission,
+    moveVoiceUser
   } = useVoice();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedStreamId, setSelectedStreamId] = useState('local'); // 'local' lub socketId
+  const [userContextMenu, setUserContextMenu] = useState(null); // { x, y, targetUser }
   const videoRef = useRef(null);
   const containerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const isOwner = server?.ownerId === user?.id;
+  const userPermissions = server?.currentUserPermissions || [];
+  const canMoveMembers = isOwner || userPermissions.includes('ADMINISTRATOR') || userPermissions.includes('MOVE_MEMBERS');
+  const otherVoiceChannels = (server?.channels || []).filter(c => c.type === 'voice' && c.id !== activeVoiceChannel?.channelId);
+
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setUserContextMenu(null);
+      }
+    };
+    document.addEventListener('click', handleGlobalClick);
+    document.addEventListener('contextmenu', handleGlobalClick);
+    return () => {
+      document.removeEventListener('click', handleGlobalClick);
+      document.removeEventListener('contextmenu', handleGlobalClick);
+    };
+  }, []);
 
   // Lista wszystkich dostępnych streamów ekranu (lokalny + zdalne) - memoizowana
   const allStreams = useMemo(() => {
@@ -151,8 +174,38 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
         channelId: activeVoiceChannel?.channelId
       });
     }
-    return list;
+
+    // Upewnij się, że obiekt każdego uczestnika ma najświeższe dane (oraz bieżący user najświeższy profil)
+    return list.map(p => {
+      const pUser = p?.user || p;
+      if (pUser?.id === user?.id && user) {
+        return {
+          ...p,
+          user: { ...pUser, ...user }
+        };
+      }
+      return p;
+    });
   }, [voiceUsers, user, isMuted, isDeafened, speakingUsers, activeVoiceChannel]);
+
+  const handleUserRightClick = (e, targetUser) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setUserContextMenu({
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: Math.min(e.clientY, window.innerHeight - 240),
+      targetUser
+    });
+  };
+
+  const handleDragStart = (e, targetUser) => {
+    if (!canMoveMembers) return;
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      userId: targetUser.id,
+      userName: targetUser.displayName || targetUser.username,
+      sourceChannelId: activeVoiceChannel?.channelId
+    }));
+  };
 
   return (
     <div
@@ -323,17 +376,20 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
                 return (
                   <div
                     key={pUser.id || pUser.socketId || pIdx}
+                    draggable={canMoveMembers}
+                    onDragStart={(e) => handleDragStart(e, pUser)}
                     onClick={() => {
                       if (onOpenUserProfile && pUser.id) {
                         onOpenUserProfile(pUser.id);
                       }
                     }}
-                    className={`aspect-video bg-dark-800/90 rounded-2xl p-4 flex flex-col items-center justify-center relative border transition-all shadow-md group cursor-pointer ${
+                    onContextMenu={(e) => handleUserRightClick(e, pUser)}
+                    className={`aspect-video bg-dark-800/90 rounded-2xl p-4 flex flex-col items-center justify-center relative border transition-all shadow-md group cursor-pointer group-voice-user ${
                       isSpeaking
                         ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.02]'
                         : 'border-dark-700 hover:border-brand-500'
                     }`}
-                    title="Kliknij, aby otworzyć profil użytkownika"
+                    title={canMoveMembers ? 'Kliknij LPM aby zobaczyć profil, PPM aby przenieść do innego kanału lub przeciągnij myszką' : 'Kliknij, aby otworzyć profil użytkownika'}
                   >
                     <UserAvatar
                       user={pUser}
@@ -391,15 +447,18 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
               return (
                 <div
                   key={pUser.id || pUser.socketId}
+                  draggable={canMoveMembers}
+                  onDragStart={(e) => handleDragStart(e, pUser)}
                   onClick={() => {
                     if (onOpenUserProfile && pUser.id) {
                       onOpenUserProfile(pUser.id);
                     }
                   }}
-                  className={`h-full aspect-video bg-dark-800 rounded-xl p-2 flex flex-col items-center justify-center relative border transition-all flex-shrink-0 cursor-pointer hover:border-brand-500 ${
+                  onContextMenu={(e) => handleUserRightClick(e, pUser)}
+                  className={`h-full aspect-video bg-dark-800 rounded-xl p-2 flex flex-col items-center justify-center relative border transition-all flex-shrink-0 cursor-pointer hover:border-brand-500 group-voice-user ${
                     isSpeaking ? 'border-emerald-500 ring-1 ring-emerald-500' : 'border-dark-700'
                   }`}
-                  title="Kliknij, aby otworzyć profil użytkownika"
+                  title="Kliknij PPM aby przenieść lub LPM aby otworzyć profil"
                 >
                   <UserAvatar user={pUser} size="sm" isSpeaking={isSpeaking} showStatus={false} />
                   <span className="text-[10px] text-white truncate max-w-full mt-1 font-semibold">
@@ -408,6 +467,68 @@ export const VoiceStage = ({ onOpenUserProfile, onSelectDefaultChannel }) => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* MENU KONTEKSTOWE UŻYTKOWNIKA GŁOSOWEGO (PPM) */}
+        {userContextMenu && (
+          <div
+            ref={menuRef}
+            className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[210px] animate-fade-in text-dark-100 space-y-1 select-none"
+            style={{
+              top: userContextMenu.y,
+              left: userContextMenu.x
+            }}
+          >
+            <div className="px-2.5 py-1.5 border-b border-dark-800 flex items-center space-x-2">
+              <UserAvatar user={userContextMenu.targetUser} size="xs" showStatus={false} />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {userContextMenu.targetUser.displayName || userContextMenu.targetUser.username}
+                </div>
+                <div className="text-[10px] text-dark-400">@{userContextMenu.targetUser.username}</div>
+              </div>
+            </div>
+
+            {/* Opcja Przenieś do innego kanału głosowego */}
+            {canMoveMembers && otherVoiceChannels.length > 0 && (
+              <div className="py-1">
+                <div className="px-2.5 py-1 text-[10px] font-bold text-dark-400 uppercase tracking-wider flex items-center space-x-1">
+                  <ArrowRightLeft size={11} className="text-brand-400" />
+                  <span>Przenieś do kanału:</span>
+                </div>
+                <div className="space-y-0.5 max-h-36 overflow-y-auto scrollbar-thin">
+                  {otherVoiceChannels.map(targetCh => (
+                    <button
+                      key={targetCh.id}
+                      onClick={() => {
+                        moveVoiceUser(userContextMenu.targetUser.id, targetCh.id, server?.id);
+                        setUserContextMenu(null);
+                      }}
+                      className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-brand-300 hover:bg-brand-500 hover:text-white rounded-lg transition-colors text-left cursor-pointer"
+                    >
+                      <Volume2 size={13} className="flex-shrink-0 text-emerald-400" />
+                      <span className="truncate">{targetCh.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="h-[1px] bg-dark-800 my-1" />
+              </div>
+            )}
+
+            {/* Zobacz profil */}
+            {onOpenUserProfile && (
+              <button
+                onClick={() => {
+                  onOpenUserProfile(userContextMenu.targetUser.id);
+                  setUserContextMenu(null);
+                }}
+                className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-xs text-dark-200 hover:bg-dark-700 hover:text-white rounded-lg transition-colors text-left cursor-pointer"
+              >
+                <UserPlus size={14} className="text-brand-400" />
+                <span>Zobacz profil</span>
+              </button>
+            )}
           </div>
         )}
       </div>

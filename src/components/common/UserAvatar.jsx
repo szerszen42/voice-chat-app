@@ -31,11 +31,13 @@ export const UserAvatar = ({
     xl: 'w-5 h-5 bottom-1 right-1 border-2'
   };
 
-  const status = statusOverride || user?.status || 'offline';
-  const avatarColor = user?.avatarColor || '#5865f2';
-  const avatarEmoji = user?.avatarEmoji || '👤';
-  const avatarUrl = user?.avatarUrl || user?.avatar || user?.avatarImage;
-  const initial = user?.displayName ? user.displayName.charAt(0).toUpperCase() : (user?.username ? user.username.charAt(0).toUpperCase() : '?');
+  // Bezpieczne rozpakowanie obiektu użytkownika (gdy przekazano { user: { ... } } lub bezpośrednio { ... })
+  const actualUser = user?.user || user || {};
+  const status = statusOverride || actualUser?.status || 'offline';
+  const avatarColor = actualUser?.avatarColor || '#5865f2';
+  const avatarEmoji = actualUser?.avatarEmoji || '👤';
+  const avatarUrl = actualUser?.avatarUrl || actualUser?.avatar || actualUser?.avatarImage || actualUser?.photoURL || null;
+  const initial = actualUser?.displayName ? actualUser.displayName.charAt(0).toUpperCase() : (actualUser?.username ? actualUser.username.charAt(0).toUpperCase() : '?');
 
   const [imgError, setImgError] = React.useState(false);
 
@@ -57,7 +59,7 @@ export const UserAvatar = ({
         {avatarUrl && !imgError ? (
           <img
             src={avatarUrl}
-            alt={user?.displayName || user?.username || 'Avatar'}
+            alt={actualUser?.displayName || actualUser?.username || 'Avatar'}
             className="w-full h-full object-cover rounded-full"
             onError={() => setImgError(true)}
           />

@@ -554,6 +554,7 @@ export const App = () => {
           />
         ) : activeView === 'server' && activeChannel?.type === 'voice' && activeVoiceChannel ? (
           <VoiceStage
+            server={activeServer}
             onOpenUserProfile={handleOpenUserProfile}
             onSelectDefaultChannel={() => {
               const defaultTextCh = (activeServer?.channels || []).find(c => c.type === 'text') || (activeServer?.channels || [])[0];

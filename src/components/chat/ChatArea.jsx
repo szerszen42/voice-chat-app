@@ -539,7 +539,12 @@ export const ChatArea = ({
 
             {/* Lista wiadomości */}
             {messages.map((msg, index) => {
-              const author = msg?.user || (msg?.senderId === user?.id ? user : dmUser);
+              const authorId = msg?.user?.id || msg?.userId || msg?.senderId;
+              const isCurrentUser = authorId === user?.id;
+              const matchedMember = (serverMembers || []).find(m => m.id === authorId);
+              const author = isCurrentUser
+                ? { ...msg?.user, ...user }
+                : (matchedMember ? { ...msg?.user, ...matchedMember } : (msg?.user || (msg?.senderId === user?.id ? user : dmUser)));
               const authorHighestRole = (server?.roles && author?.id && server?.memberRoles?.[author.id])
                 ? server.roles
                     .filter(r => r && (server.memberRoles[author.id] || []).includes(r.id))

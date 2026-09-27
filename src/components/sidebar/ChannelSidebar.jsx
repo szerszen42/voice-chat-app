@@ -39,6 +39,9 @@ export const ChannelSidebar = ({
   // Menu akcji użytkownika na kanale głosowym (LPM lub PPM)
   const [voiceUserMenu, setVoiceUserMenu] = useState(null); // { x, y, user, currentChannelId }
 
+  // Stan przeciągania użytkownika nad kanałem głosowym
+  const [dragOverChannelId, setDragOverChannelId] = useState(null);
+
   // Menu szybkiego dodawania kanału z nagłówka kategorii (LPM)
   const [categoryAddMenu, setCategoryAddMenu] = useState(null); // { x, y }
 
@@ -359,6 +362,7 @@ export const ChannelSidebar = ({
           <div className="space-y-1">
             {voiceChannels.map((channel) => {
               const isConnectedHere = activeVoiceChannel?.channelId === channel.id;
+              const isDragOver = dragOverChannelId === channel.id;
               const rawUsers = voiceStates[channel.id] || [];
               let channelUsers = [...rawUsers];
               // Jeśli jesteśmy połączeni z tym kanałem, a jeszcze nie ma nas w stanie socketu, dodaj nas natychmiast
@@ -380,17 +384,49 @@ export const ChannelSidebar = ({
                 }
               };
 
+              const handleDropUserOnChannel = (e) => {
+                e.preventDefault();
+                setDragOverChannelId(null);
+                if (!canMoveMembers) return;
+                try {
+                  const raw = e.dataTransfer.getData('text/plain');
+                  if (!raw) return;
+                  const data = JSON.parse(raw);
+                  if (data?.userId && data.sourceChannelId !== channel.id) {
+                    moveVoiceUser(data.userId, channel.id, server.id);
+                  }
+                } catch (err) {}
+              };
+
               return (
-                <div key={channel.id} className="flex flex-col">
+                <div
+                  key={channel.id}
+                  className="flex flex-col"
+                  onDragOver={(e) => {
+                    if (canMoveMembers) {
+                      e.preventDefault();
+                      setDragOverChannelId(channel.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverChannelId === channel.id) {
+                      setDragOverChannelId(null);
+                    }
+                  }}
+                  onDrop={handleDropUserOnChannel}
+                >
                   {/* Przycisk dołączenia do pokoju */}
                   <div
                     onContextMenu={(e) => handleChannelContextMenu(e, channel)}
                     onClick={handleVoiceClick}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors text-left group cursor-pointer ${
-                      isConnectedHere
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-all text-left group cursor-pointer ${
+                      isDragOver
+                        ? 'bg-brand-500/30 border border-brand-500 text-white scale-[1.02]'
+                        : isConnectedHere
                         ? 'bg-emerald-500/15 text-emerald-400 font-medium'
                         : 'text-dark-400 hover:bg-dark-700/60 hover:text-dark-200'
                     }`}
+                    title={canMoveMembers ? 'Kliknij, aby dołączyć lub upuść tutaj przeciągniętego użytkownika' : 'Kliknij, aby dołączyć do kanału'}
                   >
                     <div className="flex items-center space-x-2 truncate">
                       {channel.isPrivate ? (
@@ -402,7 +438,12 @@ export const ChannelSidebar = ({
                     </div>
 
                     <div className="flex items-center space-x-1">
-                      {isConnectedHere && (
+                      {isDragOver && (
+                        <span className="text-[10px] bg-brand-500 text-white px-1.5 py-0.5 rounded font-bold uppercase animate-pulse">
+                          Upuść tutaj
+                        </span>
+                      )}
+                      {isConnectedHere && !isDragOver && (
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase font-bold">
                           Połączono
                         </span>
@@ -428,9 +469,22 @@ export const ChannelSidebar = ({
                         return (
                           <div
                             key={voiceUserObj.id || voiceUserObj.socketId}
+                            draggable={canMoveMembers}
+                            onDragStart={(e) => {
+                              if (!canMoveMembers) return;
+                              e.dataTransfer.setData('text/plain', JSON.stringify({
+                                userId: voiceUserObj.id,
+                                userName: voiceUserObj.displayName || voiceUserObj.username,
+                                sourceChannelId: channel.id
+                              }));
+                            }}
                             onClick={(e) => handleVoiceUserClick(e, voiceUserObj, channel.id)}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              handleVoiceUserClick(e, voiceUserObj, channel.id);
+                            }}
                             className="flex items-center justify-between py-1 px-1.5 rounded-lg hover:bg-dark-700/70 cursor-pointer text-xs text-dark-300 hover:text-white transition-colors group/user"
-                            title="Kliknij LPM dla opcji użytkownika (Przenieś / Profil / DM)"
+                            title={canMoveMembers ? 'Kliknij LPM/PPM aby otworzyć menu lub przeciągnij do innego kanału' : 'Kliknij, aby otworzyć opcje użytkownika'}
                           >
                             <div className="flex items-center space-x-2 min-w-0 truncate">
                               <UserAvatar
@@ -447,7 +501,7 @@ export const ChannelSidebar = ({
                             {/* Opcje akcji użytkownika głosowego */}
                             <div className="opacity-0 group-hover/user:opacity-100 flex items-center space-x-1">
                               {canMoveMembers && (
-                                <span className="p-0.5 rounded text-dark-400 hover:text-brand-400 hover:bg-dark-600" title="Przenieś do innego kanału">
+                                <span className="p-0.5 rounded text-dark-400 hover:text-brand-400 hover:bg-dark-600" title="Przeciągnij lub kliknij, aby przenieść">
                                   <ArrowRightLeft size={13} />
                                 </span>
                               )}
