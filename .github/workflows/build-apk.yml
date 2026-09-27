@@ -28,7 +28,7 @@ jobs:
 
       - name: Apply Mobile Responsive and Layout Fixes
         run: |
-          # Ukryj prawą listę członków na ekranach telefonów (żeby nie zajmowała połowy ekranu)
+          # 1. Ukryj prawą listę członków na ekranach telefonów (żeby nie zajmowała połowy ekranu)
           sed -i 's/<div className="w-56 bg-dark-800/<div className="hidden md:flex w-56 bg-dark-800/' src/components/chat/ChatArea.jsx || true
 
       - name: Build React Frontend
@@ -105,13 +105,16 @@ jobs:
           import android.graphics.Color;
           import android.os.Build;
           import android.os.Bundle;
+          import android.view.View;
           import android.view.Window;
           import android.view.WindowManager;
           import android.webkit.PermissionRequest;
           import android.webkit.WebView;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
+          import androidx.core.view.ViewCompat;
           import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
           import com.getcapacitor.BridgeActivity;
           import com.getcapacitor.BridgeWebChromeClient;
           import java.util.ArrayList;
@@ -128,9 +131,20 @@ jobs:
                   if (window != null) {
                       WindowCompat.setDecorFitsSystemWindows(window, true);
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                          window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
                           window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
                           window.setStatusBarColor(Color.parseColor("#1e1f22"));
                           window.setNavigationBarColor(Color.parseColor("#1e1f22"));
+                      }
+
+                      View decorView = window.getDecorView();
+                      if (decorView != null) {
+                          ViewCompat.setOnApplyWindowInsetsListener(decorView, (v, insets) -> {
+                              int topInset = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+                              int bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+                              v.setPadding(0, topInset, 0, bottomInset);
+                              return WindowInsetsCompat.CONSUMED;
+                          });
                       }
                   }
 
